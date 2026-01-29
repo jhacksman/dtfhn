@@ -96,10 +96,19 @@ SEGMENTS_SCHEMA = pa.schema([
 # Table Accessors
 # ============================================================================
 
+def _table_names(db) -> list[str]:
+    """Get table names from LanceDB, handling both old and new API."""
+    result = db.list_tables()
+    # list_tables() returns ListTablesResponse in newer versions
+    if hasattr(result, 'tables'):
+        return result.tables
+    # Older versions return list[str] directly
+    return list(result)
+
 def get_episodes_table() -> lancedb.table.Table:
     """Get or create the episodes table."""
     db = get_db()
-    if "episodes" in db.list_tables():
+    if "episodes" in _table_names(db):
         return db.open_table("episodes")
     return db.create_table("episodes", schema=EPISODES_SCHEMA)
 
@@ -107,7 +116,7 @@ def get_episodes_table() -> lancedb.table.Table:
 def get_stories_table() -> lancedb.table.Table:
     """Get or create the stories table."""
     db = get_db()
-    if "stories" in db.list_tables():
+    if "stories" in _table_names(db):
         return db.open_table("stories")
     return db.create_table("stories", schema=STORIES_SCHEMA)
 
@@ -115,7 +124,7 @@ def get_stories_table() -> lancedb.table.Table:
 def get_segments_table() -> lancedb.table.Table:
     """Get or create the segments table."""
     db = get_db()
-    if "segments" in db.list_tables():
+    if "segments" in _table_names(db):
         return db.open_table("segments")
     return db.create_table("segments", schema=SEGMENTS_SCHEMA)
 
@@ -535,7 +544,7 @@ def get_existing_hn_ids() -> set[str]:
     """Get set of HN IDs already in the database."""
     try:
         db = get_db()
-        if "stories" not in db.list_tables():
+        if "stories" not in _table_names(db):
             return set()
         table = db.open_table("stories")
         arrow_table = table.to_arrow()
@@ -718,13 +727,13 @@ def migrate_from_v1() -> dict:
     stats = {"articles_migrated": 0, "scripts_merged": 0, "errors": []}
 
     # Check for old tables
-    if "articles" not in db.list_tables():
+    if "articles" not in _table_names(db):
         return {"status": "no_migration_needed", "reason": "articles table not found"}
 
     # Read old data
     old_articles = db.open_table("articles").to_arrow().to_pylist()
     old_scripts = {}
-    if "scripts" in db.list_tables():
+    if "scripts" in _table_names(db):
         for s in db.open_table("scripts").to_arrow().to_pylist():
             key = (s["episode_date"], s["story_number"])
             old_scripts[key] = s
