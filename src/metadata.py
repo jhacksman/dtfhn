@@ -47,7 +47,8 @@ def embed_id3_metadata(
         audio = ID3()
 
     # Parse date for derived fields
-    dt = datetime.strptime(episode_date, "%Y-%m-%d")
+    date_part = episode_date[:10] if len(episode_date) > 10 else episode_date
+    dt = datetime.strptime(date_part, "%Y-%m-%d")
     if episode_number is None:
         episode_number = dt.timetuple().tm_yday  # Day of year
 
