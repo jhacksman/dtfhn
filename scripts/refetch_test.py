@@ -13,8 +13,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from scraper import fetch_article_text
 
 def main():
+    # Accept episode_date as CLI argument (default: 2026-01-27)
+    episode_date = sys.argv[1] if len(sys.argv) > 1 else "2026-01-27"
+    
     # Load existing stories
-    stories_path = Path(__file__).parent.parent / "data/episodes/2026-01-27/stories.json"
+    stories_path = Path(__file__).parent.parent / f"data/episodes/{episode_date}/stories.json"
     with open(stories_path) as f:
         stories = json.load(f)
     
@@ -114,7 +117,7 @@ def main():
         print(f"  {status}: {count}")
     
     # Save results
-    output_path = Path(__file__).parent.parent / "data/episodes/2026-01-27/stories_refetch.json"
+    output_path = Path(__file__).parent.parent / f"data/episodes/{episode_date}/stories_refetch.json"
     with open(output_path, "w") as f:
         json.dump(results, f, indent=2)
     print(f"\nSaved to: {output_path}")

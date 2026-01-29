@@ -99,7 +99,7 @@ SEGMENTS_SCHEMA = pa.schema([
 def get_episodes_table() -> lancedb.table.Table:
     """Get or create the episodes table."""
     db = get_db()
-    if "episodes" in db.table_names():
+    if "episodes" in db.list_tables():
         return db.open_table("episodes")
     return db.create_table("episodes", schema=EPISODES_SCHEMA)
 
@@ -107,7 +107,7 @@ def get_episodes_table() -> lancedb.table.Table:
 def get_stories_table() -> lancedb.table.Table:
     """Get or create the stories table."""
     db = get_db()
-    if "stories" in db.table_names():
+    if "stories" in db.list_tables():
         return db.open_table("stories")
     return db.create_table("stories", schema=STORIES_SCHEMA)
 
@@ -115,7 +115,7 @@ def get_stories_table() -> lancedb.table.Table:
 def get_segments_table() -> lancedb.table.Table:
     """Get or create the segments table."""
     db = get_db()
-    if "segments" in db.table_names():
+    if "segments" in db.list_tables():
         return db.open_table("segments")
     return db.create_table("segments", schema=SEGMENTS_SCHEMA)
 
@@ -224,8 +224,9 @@ def get_episode(episode_date: str) -> Optional[dict]:
         Episode dict or None if not found
     """
     table = get_episodes_table()
+    safe_date = episode_date.replace("'", "''")
     results = table.search().where(
-        f"episode_date = '{episode_date}'", prefilter=True
+        f"episode_date = '{safe_date}'", prefilter=True
     ).limit(1).to_list()
     return results[0] if results else None
 
@@ -460,8 +461,9 @@ def get_story(episode_date: str, position: int) -> Optional[dict]:
     """
     table = get_stories_table()
     story_id = make_story_id(episode_date, position)
+    safe_id = story_id.replace("'", "''")
     results = table.search().where(
-        f"id = '{story_id}'", prefilter=True
+        f"id = '{safe_id}'", prefilter=True
     ).limit(1).to_list()
 
     if results:
@@ -483,8 +485,9 @@ def get_stories_by_date(episode_date: str, include_archive: bool = False) -> lis
         List of story dicts sorted by position
     """
     table = get_stories_table()
+    safe_date = episode_date.replace("'", "''")
     results = table.search().where(
-        f"episode_date = '{episode_date}'", prefilter=True
+        f"episode_date = '{safe_date}'", prefilter=True
     ).limit(100).to_list()
 
     for r in results:
@@ -532,7 +535,7 @@ def get_existing_hn_ids() -> set[str]:
     """Get set of HN IDs already in the database."""
     try:
         db = get_db()
-        if "stories" not in db.table_names():
+        if "stories" not in db.list_tables():
             return set()
         table = db.open_table("stories")
         arrow_table = table.to_arrow()
@@ -674,8 +677,9 @@ def get_segment(segment_id: str) -> Optional[dict]:
         Segment dict or None if not found
     """
     table = get_segments_table()
+    safe_id = segment_id.replace("'", "''")
     results = table.search().where(
-        f"id = '{segment_id}'", prefilter=True
+        f"id = '{safe_id}'", prefilter=True
     ).limit(1).to_list()
     return results[0] if results else None
 
@@ -691,8 +695,9 @@ def get_episode_segments(episode_date: str) -> list[dict]:
         List of segment dicts sorted by position (all 21 segments for a complete episode)
     """
     table = get_segments_table()
+    safe_date = episode_date.replace("'", "''")
     results = table.search().where(
-        f"episode_date = '{episode_date}'", prefilter=True
+        f"episode_date = '{safe_date}'", prefilter=True
     ).limit(100).to_list()
 
     return sorted(results, key=lambda x: x.get("position", 0))
@@ -713,13 +718,13 @@ def migrate_from_v1() -> dict:
     stats = {"articles_migrated": 0, "scripts_merged": 0, "errors": []}
 
     # Check for old tables
-    if "articles" not in db.table_names():
+    if "articles" not in db.list_tables():
         return {"status": "no_migration_needed", "reason": "articles table not found"}
 
     # Read old data
     old_articles = db.open_table("articles").to_arrow().to_pylist()
     old_scripts = {}
-    if "scripts" in db.table_names():
+    if "scripts" in db.list_tables():
         for s in db.open_table("scripts").to_arrow().to_pylist():
             key = (s["episode_date"], s["story_number"])
             old_scripts[key] = s
