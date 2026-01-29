@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.hn import fetch_stories
 from src.storage import (
-    get_stories_table, store_stories_batch, get_stories_by_date, get_db
+    get_stories_table, store_stories_batch, get_stories_by_date, get_db, _table_names
 )
 
 
@@ -24,7 +24,7 @@ def clear_test_data():
     print("=" * 60)
     
     db = get_db()
-    if "stories" not in db.list_tables():
+    if "stories" not in _table_names(db):
         print("  No stories table exists yet - nothing to clear")
         return
     
