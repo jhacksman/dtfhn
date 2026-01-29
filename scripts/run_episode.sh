@@ -18,11 +18,12 @@ echo "Started: $(date)" | tee -a "$LOG"
 # Step 1: Text pipeline (fetch, scripts, interstitials, intro/outro, metadata)
 echo "[1/2] Running text pipeline..." | tee -a "$LOG"
 python3 -u -c "
+import sys
 from src.pipeline import run_episode_pipeline
 import json
-manifest = run_episode_pipeline(episode_date='${EPISODE_DATE}', num_stories=10, word_target=4000, verbose=True)
+manifest = run_episode_pipeline(episode_date=sys.argv[1], num_stories=10, word_target=4000, verbose=True)
 print(json.dumps(manifest, indent=2))
-" 2>&1 | tee -a "$LOG"
+" "${EPISODE_DATE}" 2>&1 | tee -a "$LOG"
 
 # Step 2: TTS
 echo "[2/2] Running TTS..." | tee -a "$LOG"
