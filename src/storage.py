@@ -189,7 +189,7 @@ def store_episode(
     Store an episode with its MP3 and transcript.
 
     Args:
-        episode_date: Episode date string "YYYY-MM-DD"
+        episode_date: Episode date string "YYYY-MM-DD" or "YYYY-MM-DD-HHMM"
         mp3_binary: Final MP3 as bytes
         transcript: Full episode text
         duration_seconds: Total audio length
@@ -218,7 +218,7 @@ def get_episode(episode_date: str) -> Optional[dict]:
     Get an episode by date.
 
     Args:
-        episode_date: Episode date string "YYYY-MM-DD"
+        episode_date: Episode date string "YYYY-MM-DD" or "YYYY-MM-DD-HHMM"
 
     Returns:
         Episode dict or None if not found
@@ -235,7 +235,7 @@ def get_episode_mp3(episode_date: str) -> Optional[bytes]:
     Get just the MP3 binary for an episode.
 
     Args:
-        episode_date: Episode date string "YYYY-MM-DD"
+        episode_date: Episode date string "YYYY-MM-DD" or "YYYY-MM-DD-HHMM"
 
     Returns:
         MP3 bytes or None if not found
@@ -307,7 +307,7 @@ def store_story(
     Store a story with embeddings.
 
     Args:
-        episode_date: Episode date string "YYYY-MM-DD"
+        episode_date: Episode date string "YYYY-MM-DD" or "YYYY-MM-DD-HHMM"
         position: Story order (1-10)
         hn_id: HN story ID
         title: Article title
@@ -452,7 +452,7 @@ def get_story(episode_date: str, position: int) -> Optional[dict]:
     Get a specific story.
 
     Args:
-        episode_date: Episode date string "YYYY-MM-DD"
+        episode_date: Episode date string "YYYY-MM-DD" or "YYYY-MM-DD-HHMM"
         position: Story order (1-10)
 
     Returns:
@@ -476,7 +476,7 @@ def get_stories_by_date(episode_date: str, include_archive: bool = False) -> lis
     Get all stories for an episode date.
 
     Args:
-        episode_date: Episode date string "YYYY-MM-DD"
+        episode_date: Episode date string "YYYY-MM-DD" or "YYYY-MM-DD-HHMM"
         include_archive: If True, decompress and include raw HTML
 
     Returns:
@@ -563,7 +563,7 @@ def store_segment(
     Store a segment with metadata.
 
     Args:
-        episode_date: Episode date string "YYYY-MM-DD"
+        episode_date: Episode date string "YYYY-MM-DD" or "YYYY-MM-DD-HHMM"
         segment_type: "intro", "script", "interstitial", or "outro"
         position: Ordering position (0=intro, 1-10=scripts, 11-19=interstitials, 99=outro)
         text: The text that was spoken
@@ -685,7 +685,7 @@ def get_episode_segments(episode_date: str) -> list[dict]:
     Get all segments for an episode, ordered by position.
 
     Args:
-        episode_date: Episode date string "YYYY-MM-DD"
+        episode_date: Episode date string "YYYY-MM-DD" or "YYYY-MM-DD-HHMM"
 
     Returns:
         List of segment dicts sorted by position (all 21 segments for a complete episode)
