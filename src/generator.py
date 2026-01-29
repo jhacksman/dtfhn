@@ -339,11 +339,14 @@ EPISODE (context only):
 
 def format_date_for_tts(date_str: str) -> str:
     """
-    Convert YYYY-MM-DD to TTS-friendly fully spoken format.
+    Convert YYYY-MM-DD or YYYY-MM-DD-HHMM to TTS-friendly fully spoken format.
 
     Example: '2026-01-28' -> 'January twenty-eighth, two thousand twenty-six'
+    Example: '2026-01-28-0500' -> 'January twenty-eighth, two thousand twenty-six'
     """
-    dt = datetime.strptime(date_str, "%Y-%m-%d")
+    # Strip optional -HHMM suffix for TTS (we only speak the date, not the time)
+    date_part = date_str[:10] if len(date_str) > 10 else date_str
+    dt = datetime.strptime(date_part, "%Y-%m-%d")
     month = dt.strftime("%B")
     day = num2words(dt.day, to="ordinal")
     year = num2words(dt.year)
