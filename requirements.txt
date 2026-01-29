@@ -1,0 +1,22 @@
+# Vector storage
+lancedb>=0.4.0
+pyarrow>=14.0.0
+
+# Embeddings
+sentence-transformers>=2.2.0
+torch>=2.0.0
+
+# HTTP requests
+requests>=2.31.0
+
+# Article scraping
+newspaper3k>=0.2.8
+lxml_html_clean>=0.4.0
+playwright>=1.40.0
+# Run: playwright install chromium
+
+# Audio metadata / ID3 chapters
+mutagen>=1.47.0
+
+# TTS date formatting
+num2words>=0.5.13
