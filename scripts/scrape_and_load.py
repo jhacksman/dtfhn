@@ -24,7 +24,7 @@ def clear_test_data():
     print("=" * 60)
     
     db = get_db()
-    if "stories" not in db.table_names():
+    if "stories" not in db.list_tables():
         print("  No stories table exists yet - nothing to clear")
         return
     

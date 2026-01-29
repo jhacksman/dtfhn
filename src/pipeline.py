@@ -325,12 +325,11 @@ def run_episode_pipeline(
         if verbose:
             print(f"\nFetched {len(hn_stories)} stories ({len(new_stories)} new)")
 
-        # Convert to article dicts then to story dicts
-        articles = [
-            story_to_article_dict(s, episode_date, i + 1)
+        # Convert to story dicts for storage
+        stories = [
+            convert_article_to_story(story_to_article_dict(s, episode_date, i + 1))
             for i, s in enumerate(hn_stories)
         ]
-        stories = [convert_article_to_story(a) for a in articles]
 
         # Save raw stories data
         stories_json = [
