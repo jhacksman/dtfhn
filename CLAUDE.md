@@ -348,6 +348,8 @@ Each pipeline stage receives ONLY what it needs:
 
 34. **Chapter titles come from stories.json, not segments.** Segments don't carry story titles or HN IDs — they only have `story_position`. To get real chapter titles and HN URLs, pass `stories` (from `stories.json` or `load_stories_for_episode()`) to `segments_to_chapters()`, `embed_chapters()`, and `generate_chapters_json()`. All three accept an optional `stories` parameter. Without it, chapters fall back to "Story N" generic titles.
 
+35. **Open-source litmus test in script generation.** The `generate_script()` prompt includes an explicit "OPEN SOURCE LITMUS TEST" section that forces the LLM to evaluate whether a covered project is open source or proprietary, and adjust the Carlin take accordingly. Proprietary projects MUST be called out — no purely positive takes on closed-source products. This was added after ShapedQL (2026-01-29) got a glowing review with zero mention of being a closed-source cloud service, despite CARLIN.md explicitly listing "proprietary lock-in" as a target. The fix is in the prompt, not the fetcher — the generator detects signals (no repo, pricing page, cloud-only) from the article text it already receives.
+
 ---
 
 ## Quick Reference
