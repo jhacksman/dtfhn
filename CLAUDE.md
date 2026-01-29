@@ -67,16 +67,63 @@ cleanup_wav_files(wav_files)
 
 **Silence gaps:** By default, 1 second of silence is inserted between segments for natural breathing room. The `DEFAULT_SILENCE_DURATION` constant in `audio.py` controls this. Pass `silence_duration=None` or `0` to disable.
 
-### TTS Endpoint (Reference)
+### TTS API (Reference)
 - **URL:** http://192.168.0.134:7849
 - **Voice:** george_carlin (F5-TTS trained on Carlin specials)
 - **GPUs:** 3 (parallel processing)
 - **Speed:** ~1.7x realtime per GPU
+- **Dispatch:** Least-queued (each request routes to GPU with shortest queue, not round-robin)
 
 **Endpoints:**
-- `POST /speak` — Generate audio (text → WAV)
-- `GET /` — Queue status per GPU
-- `GET /voices` — List voice profiles
+
+**`POST /speak`** — Generate audio (text → WAV)
+- Body: `{"text": "...", "voice": "george_carlin", "language": "English", "filename": "output.wav", "timeout": 0}`
+  - `text` (required): Text to speak
+  - `voice` (optional): Default `george_carlin`
+  - `language` (optional): Default `English`
+  - `filename` (optional): Default `output.wav`
+  - `timeout` (optional): Per-request timeout in seconds. **ALWAYS USE 0** to disable timeout (critical for long segments). Overrides `TTS_TIMEOUT` env var.
+- Returns: WAV audio bytes (`audio/wav`)
+- Response header: `X-Job-Id` — integer job ID for tracking
+- Status codes: `200` OK, `504` timed out, `409` cancelled
+
+**`GET /`** — Basic health check
+```json
+{"status": "ok", "gpus": 3, "voices": ["george_carlin"]}
+```
+
+**`GET /status`** — Queue status per GPU
+```json
+{
+  "gpus": [
+    {"gpu": 0, "active": "— Text preview...", "queued": 5},
+    {"gpu": 1, "active": null, "queued": 3},
+    {"gpu": 2, "active": "— Another text...", "queued": 4}
+  ],
+  "total_active": 2,
+  "total_queued": 12,
+  "completed": 47
+}
+```
+
+**`GET /voices`** — List available voice profiles
+```json
+["george_carlin"]
+```
+
+**`GET /jobs`** — List all tracked jobs with status
+- Returns: `{"jobs": [{ job_id, gpu_id, text_preview, status, submitted_at }]}`
+- `status`: `queued` | `active` | `done` | `failed` | `timed_out` | `cancelled`
+
+**`DELETE /jobs/{job_id}`** — Cancel a specific job
+- Only cancels queued (not yet running) jobs
+- `job_id`: integer (from `X-Job-Id` header)
+
+**`DELETE /gpu/{gpu_id}/queue`** — Flush all queued jobs for a GPU
+- Cancels all queued (not yet running) jobs for the specified GPU
+- `gpu_id`: integer (0, 1, or 2)
+
+**CLIENT PATTERN:** Fire all segments at once, no timeout. Server handles queuing and least-queued dispatch across 3 GPUs.
 
 ### Vector Storage (LanceDB) — Schema v2.1
 

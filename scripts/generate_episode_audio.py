@@ -9,45 +9,67 @@ Features robust TTS pipeline with:
 - Pre-flight checks for queue status and existing files
 - Retry logic for failed segments
 - Progress monitoring
+- Queue management (--status, --clear-queue, --flush-gpu)
+- Job tracking via X-Job-Id headers
+- Stuck job detection with configurable threshold (10 min default)
+- Job listing via --list-jobs
 
 Usage:
     python generate_episode_audio.py 2026-01-27           # Normal mode (aborts if queue not empty)
     python generate_episode_audio.py 2026-01-27 --force   # Skip queue check
     python generate_episode_audio.py 2026-01-27 --wait    # Wait for queue to drain first
+    python generate_episode_audio.py --status             # Check TTS server queue status
+    python generate_episode_audio.py --clear-queue        # Clear all GPU queues
+    python generate_episode_audio.py --flush-gpu 0        # Flush a specific GPU's queue
+    python generate_episode_audio.py --list-jobs          # List all tracked jobs with status
 """
 import sys
 import fcntl
 import json
 import time
 import argparse
+import subprocess
+import requests
 from pathlib import Path
 from datetime import datetime
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.tts import text_to_speech_parallel_robust, check_tts_status
+from src.tts import text_to_speech_parallel_robust, check_tts_status, TTS_STATUS_URL
 from src.audio import stitch_wavs, transcode_to_mp3, get_audio_duration, cleanup_wav_files
 from src.storage import store_episode, store_segments_batch
 from src.chapters import embed_chapters, generate_chapters_json, load_stories_for_episode
 from src.metadata import embed_id3_metadata
 from src.pipeline import parse_segment_name
 
+# TTS server base URL
+TTS_BASE_URL = "http://192.168.0.134:7849"
 
-def wait_for_queue_drain(timeout_seconds: int = 1800, poll_interval: int = 10) -> bool:
+# Stuck job detection threshold (seconds)
+STUCK_JOB_THRESHOLD = 600  # 10 minutes with no progress = warning
+
+
+def wait_for_queue_drain(timeout_seconds: int = 1800, poll_interval: int = 10,
+                         stuck_threshold: int = STUCK_JOB_THRESHOLD) -> bool:
     """
     Wait for TTS queue to drain completely.
+    
+    The server uses least-queued GPU dispatch (not round-robin), so jobs
+    are distributed to whichever GPU has the shortest queue.
     
     Args:
         timeout_seconds: Max time to wait (default 30 min)
         poll_interval: Seconds between status checks
+        stuck_threshold: Seconds with no progress before warning
     
     Returns:
         True if queue drained, False if timeout
     """
     start = time.time()
     last_completed = -1
-    stall_count = 0
+    last_progress_time = time.time()
+    stuck_warned = False
     
     while time.time() - start < timeout_seconds:
         status = check_tts_status()
@@ -65,26 +87,203 @@ def wait_for_queue_drain(timeout_seconds: int = 1800, poll_interval: int = 10) -
         if active == 0 and queued == 0:
             return True
         
-        # Stall detection
-        if completed == last_completed:
-            stall_count += 1
-            if stall_count >= 12:  # 2 minutes of no progress
-                print(f"  Warning: Queue stalled for {stall_count * poll_interval}s")
+        # Stuck job detection
+        if completed > last_completed:
+            last_completed = completed
+            last_progress_time = time.time()
+            stuck_warned = False
         else:
-            stall_count = 0
-        last_completed = completed
+            stall_duration = time.time() - last_progress_time
+            if stall_duration > stuck_threshold and not stuck_warned:
+                print(f"  ⚠️  WARNING: No progress for {stall_duration:.0f}s (threshold: {stuck_threshold}s)")
+                print(f"      Jobs may be stuck. Consider --clear-queue or restarting TTS server.")
+                stuck_warned = True
         
         time.sleep(poll_interval)
     
     return False
 
 
+def show_queue_status():
+    """Display detailed TTS queue status."""
+    status = check_tts_status()
+    if "error" in status:
+        print(f"ERROR: TTS server unreachable: {status['error']}")
+        return False
+
+    print("TTS Server Status")
+    print("=" * 50)
+    gpus = status.get("gpus", [])
+    for gpu in gpus:
+        gpu_id = gpu["gpu"]
+        active = gpu.get("active")
+        queued = gpu.get("queued", 0)
+        status_str = f"ACTIVE: {active[:60]}..." if active else "IDLE"
+        print(f"  GPU {gpu_id}: {status_str} | {queued} queued")
+
+    print(f"\n  Total active: {status.get('total_active', 0)}")
+    print(f"  Total queued: {status.get('total_queued', 0)}")
+    print(f"  Completed:    {status.get('completed', 0)}")
+    print("=" * 50)
+    return True
+
+
+def clear_gpu_queue(gpu_id: int) -> bool:
+    """
+    Clear a specific GPU's queue via DELETE /gpu/{gpu_id}/queue.
+    
+    Cancels all queued (not yet running) jobs for the given GPU.
+    
+    Args:
+        gpu_id: GPU index (0, 1, or 2)
+    
+    Returns:
+        True if queue was cleared successfully
+    """
+    try:
+        resp = requests.delete(f"{TTS_BASE_URL}/gpu/{gpu_id}/queue", timeout=10)
+        if resp.status_code == 200:
+            result = resp.json()
+            cancelled = result.get("cancelled", "?")
+            print(f"  GPU {gpu_id}: cleared {cancelled} queued jobs")
+            return True
+        elif resp.status_code == 404:
+            print(f"  GPU {gpu_id}: endpoint not available (404)")
+            return False
+        else:
+            print(f"  GPU {gpu_id}: HTTP {resp.status_code} — {resp.text[:80]}")
+            return False
+    except Exception as e:
+        print(f"  GPU {gpu_id}: Error — {e}")
+        return False
+
+
+def clear_gpu_queues():
+    """
+    Clear all GPU queues via DELETE /gpu/{id}/queue.
+    """
+    status = check_tts_status()
+    if "error" in status:
+        print(f"ERROR: TTS server unreachable: {status['error']}")
+        return False
+
+    gpus = status.get("gpus", [])
+    any_cleared = False
+    for gpu in gpus:
+        if clear_gpu_queue(gpu["gpu"]):
+            any_cleared = True
+
+    if not any_cleared:
+        print("\nNote: No queues were cleared. They may already be empty.")
+    return any_cleared
+
+
+def list_jobs() -> bool:
+    """
+    List all tracked jobs via GET /jobs.
+    
+    Returns:
+        True if jobs were listed successfully
+    """
+    try:
+        resp = requests.get(f"{TTS_BASE_URL}/jobs", timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            # Response is {"jobs": [...]} with fields: job_id, gpu_id, text_preview, status, submitted_at
+            jobs = data.get("jobs", data) if isinstance(data, dict) else data
+            if not jobs:
+                print("No jobs tracked.")
+                return True
+            
+            print(f"{'ID':<6} {'Status':<12} {'GPU':<5} {'Submitted':<20} {'Text Preview'}")
+            print("=" * 100)
+            for job in jobs:
+                job_id = job.get("job_id", job.get("id", "?"))
+                status = job.get("status", "?")
+                gpu = job.get("gpu_id", job.get("gpu", "?"))
+                submitted = job.get("submitted_at", "")
+                if isinstance(submitted, (int, float)):
+                    submitted = datetime.fromtimestamp(submitted).strftime("%H:%M:%S")
+                text = job.get("text_preview", job.get("text", ""))[:50]
+                print(f"{job_id:<6} {status:<12} {gpu:<5} {submitted:<20} {text}")
+            
+            print(f"\nTotal: {len(jobs)} jobs")
+            return True
+        elif resp.status_code == 404:
+            print("Job listing endpoint not available (404)")
+            return False
+        else:
+            print(f"HTTP {resp.status_code}: {resp.text[:100]}")
+            return False
+    except Exception as e:
+        print(f"Error listing jobs: {e}")
+        return False
+
+
+# Telegram file size limit (Clawdbot media limit is 16MB, leave 1MB margin)
+TELEGRAM_SIZE_LIMIT = 15 * 1024 * 1024  # 15 MB
+
+
+def create_telegram_mp3(source_mp3: Path, output_mp3: Path) -> bool:
+    """
+    Create a Telegram-friendly MP3 (96k mono) if the source exceeds 15MB.
+    
+    Args:
+        source_mp3: Path to the full-quality episode.mp3
+        output_mp3: Path to save the Telegram version (e.g., episode_telegram.mp3)
+    
+    Returns:
+        True if a Telegram version was created, False if not needed or failed
+    """
+    source_size = source_mp3.stat().st_size
+    if source_size <= TELEGRAM_SIZE_LIMIT:
+        print(f"  MP3 is {source_size / 1024 / 1024:.1f} MB — under {TELEGRAM_SIZE_LIMIT // (1024*1024)} MB limit, no Telegram version needed.")
+        return False
+    
+    print(f"  MP3 is {source_size / 1024 / 1024:.1f} MB — exceeds {TELEGRAM_SIZE_LIMIT // (1024*1024)} MB limit, creating Telegram version...")
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg", "-y", "-i", str(source_mp3),
+                "-ac", "1",           # mono
+                "-b:a", "96k",        # 96 kbps
+                "-map_metadata", "0", # preserve ID3 tags
+                str(output_mp3),
+            ],
+            capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode != 0:
+            print(f"  ERROR: ffmpeg failed: {result.stderr[:200]}")
+            return False
+        
+        tg_size = output_mp3.stat().st_size
+        print(f"  Telegram MP3: {output_mp3.name} ({tg_size / 1024 / 1024:.1f} MB)")
+        
+        if tg_size > TELEGRAM_SIZE_LIMIT:
+            print(f"  WARNING: Telegram version still exceeds limit ({tg_size / 1024 / 1024:.1f} MB)!")
+        
+        return True
+    except FileNotFoundError:
+        print("  ERROR: ffmpeg not found. Install ffmpeg to enable Telegram transcoding.")
+        return False
+    except subprocess.TimeoutExpired:
+        print("  ERROR: ffmpeg timed out after 120s")
+        return False
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Generate TTS audio for podcast episode")
-    parser.add_argument("episode_date", help="Episode date (YYYY-MM-DD)")
+    parser.add_argument("episode_date", nargs="?", help="Episode date (YYYY-MM-DD)")
     parser.add_argument("--force", action="store_true", help="Skip queue check, proceed immediately")
     parser.add_argument("--wait", action="store_true", help="Wait for queue to drain before starting")
     parser.add_argument("--wait-timeout", type=int, default=1800, help="Max seconds to wait for queue (default 1800)")
+    parser.add_argument("--status", action="store_true", help="Show TTS server queue status and exit")
+    parser.add_argument("--clear-queue", action="store_true", help="Clear all GPU queues and exit")
+    parser.add_argument("--flush-gpu", type=int, metavar="GPU_ID",
+                        help="Flush a specific GPU's queue (0, 1, or 2) and exit")
+    parser.add_argument("--list-jobs", action="store_true", help="List all tracked jobs with status and exit")
+    parser.add_argument("--stuck-threshold", type=int, default=STUCK_JOB_THRESHOLD,
+                        help=f"Seconds with no progress before warning (default {STUCK_JOB_THRESHOLD})")
     return parser.parse_args()
 
 
@@ -192,6 +391,27 @@ def release_lock(lock_fd, lock_file: Path) -> None:
 
 def main():
     args = parse_args()
+
+    # Handle utility commands that don't need an episode date
+    if args.status:
+        show_queue_status()
+        return
+    if args.clear_queue:
+        print("Clearing GPU queues...")
+        clear_gpu_queues()
+        return
+    if args.flush_gpu is not None:
+        print(f"Flushing GPU {args.flush_gpu} queue...")
+        clear_gpu_queue(args.flush_gpu)
+        return
+    if args.list_jobs:
+        list_jobs()
+        return
+
+    if not args.episode_date:
+        print("ERROR: episode_date is required (unless using --status or --clear-queue)")
+        sys.exit(1)
+
     episode_date = args.episode_date
     episode_dir = Path(__file__).parent.parent / "data" / "episodes" / episode_date
     lock_file = episode_dir / ".tts_generation.lock"
@@ -364,6 +584,12 @@ def main():
         )
         print()
         
+        # Create Telegram-friendly version if needed
+        print("Checking Telegram file size...")
+        episode_telegram = episode_dir / "episode_telegram.mp3"
+        telegram_created = create_telegram_mp3(episode_mp3, episode_telegram)
+        print()
+        
         # Cleanup temp WAVs
         print("Cleaning up temp WAV files...")
         deleted = cleanup_wav_files(wav_files)
@@ -380,6 +606,9 @@ def main():
         print(f"Episode {episode_date} complete!")
         print(f"  Duration: {duration:.1f}s ({duration / 60:.1f} min)")
         print(f"  MP3 size: {mp3_size / 1024 / 1024:.1f} MB")
+        if telegram_created:
+            tg_size = episode_telegram.stat().st_size
+            print(f"  Telegram: {tg_size / 1024 / 1024:.1f} MB (96k mono)")
         print(f"  Segments: {len(segment_metadata)}")
         print(f"  TTS time: {tts_time:.1f}s")
         print("=" * 50)

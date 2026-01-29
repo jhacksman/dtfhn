@@ -340,13 +340,40 @@ def _strip_markdown(text: str) -> str:
 
 
 def _strip_preamble(text: str) -> str:
-    """Strip LLM preamble lines like 'Here's the intro:' before actual content."""
+    """Strip LLM preamble lines like 'Here's the intro:' before actual content.
+    
+    Also strips:
+    - Word count meta-commentary (e.g. "64 words — within the 40-70 range.")
+    - Duplicate intro/outro prefix lines
+    """
     # Common preamble patterns the LLM might prepend
     preamble_re = re.compile(
         r"^(here'?s?\s+(the|your|an?)\s+\w+[:\.]?\s*\n?)",
         re.IGNORECASE,
     )
     text = preamble_re.sub("", text).strip()
+    
+    # Strip word-count meta-commentary (e.g. "64 words — within the 40-70 range. Here's the intro:")
+    meta_re = re.compile(
+        r"\d+\s+words?\s*[—–-]\s*[^\n.]*(?:range|limit|target|count|words?)[^\n]*[.:]?\s*\n?",
+        re.IGNORECASE,
+    )
+    text = meta_re.sub("", text).strip()
+    
+    # Strip "Here's the intro/outro:" that may appear mid-text after meta
+    mid_preamble_re = re.compile(
+        r"here'?s?\s+(the|your|an?)\s+\w+[:\.]?\s*\n?",
+        re.IGNORECASE,
+    )
+    text = mid_preamble_re.sub("", text).strip()
+    
+    # Remove duplicate "You're listening to D T F H N" prefix
+    dtfhn_prefix = "You're listening to D T F H N"
+    if text.count(dtfhn_prefix) > 1:
+        # Keep only the last occurrence and everything after it
+        last_idx = text.rfind(dtfhn_prefix)
+        text = text[last_idx:]
+    
     return text
 
 

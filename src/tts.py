@@ -86,13 +86,16 @@ def text_to_speech(text: str, output_path: Path, voice: str = TTS_VOICE) -> tupl
         response = requests.post(
             TTS_URL,
             headers={"Content-Type": "application/json"},
-            json={"text": prepared_text, "voice": voice},
+            json={"text": prepared_text, "voice": voice, "timeout": 0},
             timeout=TTS_TIMEOUT,
         )
         
+        # Track job ID from response header
+        job_id = response.headers.get("X-Job-Id")
+        
         # Check HTTP status
         if response.status_code != 200:
-            return (False, f"HTTP {response.status_code}: {response.text[:100]}")
+            return (False, f"HTTP {response.status_code} (job={job_id}): {response.text[:100]}")
         
         # Validate WAV content
         is_valid, error = validate_wav_bytes(response.content)
@@ -135,8 +138,9 @@ def text_to_speech_parallel(
     Generate all WAVs in parallel.
     
     Fires all TTS requests at once. quato has 3 GPUs that process
-    requests from their queues in parallel, so sending everything
-    immediately maximizes throughput.
+    requests in parallel using least-queued dispatch — each new request
+    is routed to the GPU with the shortest queue (not round-robin).
+    Sending everything immediately maximizes throughput.
     
     Args:
         segments: list of (name, text) tuples
