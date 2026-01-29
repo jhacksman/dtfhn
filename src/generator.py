@@ -7,6 +7,7 @@ Also generates dynamic intro/outro with full episode context.
 import logging
 import re
 import subprocess
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -25,6 +26,20 @@ DEFAULT_WORD_TARGET = 4000
 WORDS_PER_STORY = 400  # ~400 words per story for 10 stories
 
 
+def _validate_llm_output(text: str, label: str, min_words: int) -> None:
+    """Validate LLM output is non-empty and meets minimum word count.
+
+    Raises ``ValueError`` with a descriptive message on failure.
+    """
+    if not text or not text.strip():
+        raise ValueError(f"{label}: LLM returned empty output")
+    wc = len(text.split())
+    if wc < min_words:
+        raise ValueError(
+            f"{label}: LLM output too short ({wc} words, minimum {min_words})"
+        )
+
+
 def load_carlin_voice() -> str:
     """Load the Carlin character bible from CARLIN.md."""
     if CARLIN_MD_PATH.exists():
@@ -40,20 +55,47 @@ def count_words(text: str) -> int:
     return len(text.split())
 
 
-def call_claude(prompt: str) -> str:
-    """Call Claude via CLI with stdin=DEVNULL to prevent hanging."""
-    result = subprocess.run(
-        ["claude", "-p", prompt],
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        text=True,
-        timeout=CLI_TIMEOUT,
-    )
+def call_claude(prompt: str, max_retries: int = 3) -> str:
+    """Call Claude via CLI with stdin=DEVNULL to prevent hanging.
 
-    if result.returncode != 0:
-        raise RuntimeError(f"Claude CLI failed: {result.stderr or result.stdout}")
+    Retries up to *max_retries* times on transient failures with exponential
+    backoff (2^attempt seconds).  Catches ``RuntimeError`` (non-zero exit) and
+    ``subprocess.TimeoutExpired``.
+    """
+    last_exc: Exception | None = None
 
-    return result.stdout.strip()
+    for attempt in range(max_retries):
+        try:
+            result = subprocess.run(
+                ["claude", "-p", prompt],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=CLI_TIMEOUT,
+            )
+
+            if result.returncode != 0:
+                raise RuntimeError(f"Claude CLI failed: {result.stderr or result.stdout}")
+
+            return result.stdout.strip()
+
+        except (RuntimeError, subprocess.TimeoutExpired) as exc:
+            last_exc = exc
+            if attempt < max_retries - 1:
+                backoff = 2 ** (attempt + 1)  # 2, 4, 8 …
+                logger.warning(
+                    "call_claude attempt %d/%d failed (%s). Retrying in %ds…",
+                    attempt + 1, max_retries, exc, backoff,
+                )
+                time.sleep(backoff)
+            else:
+                logger.error(
+                    "call_claude failed after %d attempts: %s",
+                    max_retries, exc,
+                )
+
+    # Should not reach here, but satisfy type checker
+    raise last_exc  # type: ignore[misc]
 
 
 def generate_script(
@@ -182,6 +224,7 @@ Write in spoken voice - this will be read aloud.
 Write the script now."""
 
     script = call_claude(prompt)
+    _validate_llm_output(script, "generate_script", min_words=50)
     word_count = count_words(script)
 
     return script, word_count
@@ -277,7 +320,9 @@ NEXT SEGMENT TOPIC: {next_title}
 Write a quick Carlin-style pivot. 15-30 words max.
 Just the transition, nothing else. No quotes or formatting."""
 
-    return call_claude(prompt)
+    text = call_claude(prompt)
+    _validate_llm_output(text, "generate_interstitial", min_words=10)
+    return text
 
 
 # ---------------------------------------------------------------------------
@@ -449,6 +494,7 @@ def generate_intro(
 
     prompt = INTRO_PROMPT.format(tts_date=tts_date, episode_body=episode_body)
     text = call_claude(prompt)
+    _validate_llm_output(text, "generate_intro", min_words=20)
 
     # Harden output
     text = _strip_preamble(text)
@@ -489,6 +535,7 @@ def generate_outro(
 
     prompt = OUTRO_PROMPT.format(tts_date=tts_date, episode_body=episode_body)
     text = call_claude(prompt)
+    _validate_llm_output(text, "generate_outro", min_words=20)
 
     # Harden output
     text = _strip_preamble(text)
