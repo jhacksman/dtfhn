@@ -9,6 +9,15 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# Concurrent run protection
+LOCKFILE="/tmp/dtfhn-pipeline.lock"
+if [ -f "$LOCKFILE" ] && kill -0 "$(cat "$LOCKFILE")" 2>/dev/null; then
+    echo "ERROR: Pipeline already running (PID $(cat "$LOCKFILE"))"
+    exit 1
+fi
+echo $$ > "$LOCKFILE"
+trap 'rm -f "$LOCKFILE"' EXIT
+
 EPISODE_DATE="${1:-$(date +%Y-%m-%d-%H%M)}"
 LOG="/tmp/dtfhn-${EPISODE_DATE}.log"
 

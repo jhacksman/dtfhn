@@ -5,7 +5,7 @@ Scrape top 10 HN stories and load into LanceDB.
 
 import sys
 import json
-from datetime import date
+from datetime import datetime
 from pathlib import Path
 
 # Add src to path
@@ -144,7 +144,7 @@ def verify(episode_date: str):
 
 def main():
     # Use today's date
-    episode_date = date.today().isoformat()
+    episode_date = datetime.now().strftime("%Y-%m-%d-%H%M")
     print(f"\nEpisode date: {episode_date}")
     
     # Run pipeline
