@@ -361,3 +361,5 @@ curl -X POST http://192.168.0.134:7849/speak \
   -d '{"text": "Test", "voice": "george_carlin"}' \
   --output test.wav
 ```
+
+36. **Episode dates include military time (YYYY-MM-DD-HHMM).** Default format is now `2026-01-29-0500` not `2026-01-29`. Allows multiple episodes per day to coexist. `format_date_for_tts()` strips the `-HHMM` suffix so spoken intros remain clean. The `topstories.json` API endpoint IS correct — it matches the HN front page at time of fetch. Story differences between episodes and the live front page are purely timing (HN churns fast).
