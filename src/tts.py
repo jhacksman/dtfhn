@@ -50,13 +50,12 @@ def prepare_text_for_tts(text: str) -> str:
         'json': 'jason',
         'txt': 'text',
         'toml': 'tomul',
-        'gif': 'jif',
         'wav': 'wave',
     }
     
     # Extensions that sound fine spoken as-is (not spelled out)
     NATURAL_EXTENSIONS = {
-        'zip', 'log', 'bin', 'bat', 'doc', 'go',
+        'zip', 'log', 'bin', 'bat', 'doc', 'go', 'gif',
     }
     
     # Generic file extension handler: .xyz → "dot X Y Z" (spells out up to 5 chars)
