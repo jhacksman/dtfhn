@@ -72,9 +72,12 @@ def prepare_text_for_tts(text: str) -> str:
     
     text = re.sub(r'\.([a-zA-Z]{1,5})\b', _spell_extension, text)
     
-    # Brand/product pronunciation fixes
+    # Word pronunciation fixes
     PRONUNCIATION_FIXES = [
         (r'\bGrok\b', 'Grock'),
+        (r'\bREADME\b', 'read me'),
+        (r'\bReadme\b', 'read me'),
+        (r'\breadme\b', 'read me'),
     ]
     
     for pattern, replacement in PRONUNCIATION_FIXES:
