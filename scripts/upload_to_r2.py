@@ -245,6 +245,24 @@ def upload_episode(s3_client, episode_date: str, mp3_path: Path):
     upload_file(s3_client, str(mp3_path), r2_key, content_type="audio/mpeg")
 
 
+def find_transcript(episode_date: str) -> Path | None:
+    """Find the VTT transcript file for an episode.
+
+    Returns the path or None if not found.
+    """
+    episode_dir = Path(__file__).resolve().parent.parent / "data" / "episodes" / episode_date
+    vtt_path = episode_dir / "transcript.vtt"
+    if vtt_path.exists():
+        return vtt_path
+    return None
+
+
+def upload_transcript(s3_client, episode_date: str, vtt_path: Path):
+    """Upload a transcript VTT file to R2."""
+    r2_key = f"{R2_PREFIX}/transcripts/DTFHN-{episode_date}.vtt"
+    upload_file(s3_client, str(vtt_path), r2_key, content_type="text/vtt")
+
+
 def upload_feed(s3_client):
     """Regenerate and upload the RSS feed."""
     from src.feed import generate_feed
@@ -298,8 +316,15 @@ def main():
             description=args.description,
         )
 
-        print(f"\n[3/3] Uploading episode: {args.episode_date}")
+        print(f"\n[3/4] Uploading episode: {args.episode_date}")
         upload_episode(s3, args.episode_date, mp3_path)
+
+        print(f"\n[4/4] Uploading transcript: {args.episode_date}")
+        vtt_path = find_transcript(args.episode_date)
+        if vtt_path:
+            upload_transcript(s3, args.episode_date, vtt_path)
+        else:
+            print(f"  No transcript.vtt found for {args.episode_date}, skipping.")
     else:
         print()
 

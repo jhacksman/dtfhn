@@ -27,8 +27,9 @@ EPISODES_URL = f"{R2_BASE_URL}/episodes"
 FEED_URL = f"{R2_BASE_URL}/feed.xml"
 ARTWORK_URL = f"{R2_BASE_URL}/artwork.jpg"
 
-# iTunes XML namespace
+# XML namespaces
 ITUNES_NS = "http://www.itunes.com/dtds/podcast-1.0.dtd"
+PODCAST_NS = "https://podcastindex.org/namespace/1.0"
 
 # Default episode description when manifest entry lacks one
 DEFAULT_EPISODE_DESCRIPTION = "Daily coverage of the top 10 stories on Hacker News."
@@ -135,9 +136,12 @@ def generate_feed(output_path: Optional[str] = None) -> str:
     # Register namespaces
     CONTENT_NS = "http://purl.org/rss/1.0/modules/content/"
     ATOM_NS = "http://www.w3.org/2005/Atom"
+    PODCAST_NS = "https://podcastindex.org/namespace/1.0"
     ET.register_namespace("itunes", ITUNES_NS)
+    ET.register_namespace("podcast", PODCAST_NS)
     ET.register_namespace("content", CONTENT_NS)
     ET.register_namespace("atom", ATOM_NS)
+    ET.register_namespace("podcast", PODCAST_NS)
 
     # Build RSS root
     rss = ET.Element("rss", {"version": "2.0"})
@@ -235,6 +239,14 @@ def generate_feed(output_path: Optional[str] = None) -> str:
         # Episode artwork (falls back to show artwork)
         ET.SubElement(item, f"{{{ITUNES_NS}}}image", href=ARTWORK_URL)
 
+        # Podcasting 2.0: chapters
+        chapters_url = f"{R2_BASE_URL}/chapters/DTFHN-{date}-chapters.json"
+        ET.SubElement(
+            item, f"{{{PODCAST_NS}}}chapters",
+            url=chapters_url,
+            type="application/json+chapters",
+        )
+
         # iTunes episode tags
         duration = ep.get("duration_seconds", 0)
         if duration:
@@ -248,6 +260,16 @@ def generate_feed(output_path: Optional[str] = None) -> str:
             "true" if meta["explicit"] else "false"
         )
         ET.SubElement(item, f"{{{ITUNES_NS}}}episodeType").text = "full"
+
+        # Podcast 2.0: Transcript (VTT with timing + speaker tags)
+        transcript_url = f"{R2_BASE_URL}/transcripts/DTFHN-{date}.vtt"
+        ET.SubElement(
+            item,
+            f"{{{PODCAST_NS}}}transcript",
+            url=transcript_url,
+            type="text/vtt",
+            language="en",
+        )
 
         # Season = year, Episode = day of year
         date_part = date[:10]
