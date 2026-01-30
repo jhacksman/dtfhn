@@ -32,7 +32,7 @@ def embed_id3_metadata(
 
     Tags embedded:
         TIT2 (Title): "Daily Tech Feed - YYYY-MM-DD"
-        TPE1 (Artist): "AI George Carlin"
+        TPE1 (Artist): "Jack Hacksman"
         TPE2 (Album Artist): "Daily Tech Feed"
         TALB (Album): "Daily Tech Feed"
         TCON (Genre): "Technology"
@@ -56,7 +56,7 @@ def embed_id3_metadata(
 
     # Core identification
     audio.add(TIT2(encoding=3, text=title))
-    audio.add(TPE1(encoding=3, text="AI George Carlin"))
+    audio.add(TPE1(encoding=3, text="Jack Hacksman"))
     audio.add(TPE2(encoding=3, text="Daily Tech Feed"))
     audio.add(TALB(encoding=3, text="Daily Tech Feed"))
     audio.add(TCON(encoding=3, text="Technology"))
