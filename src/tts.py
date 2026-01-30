@@ -49,7 +49,7 @@ def prepare_text_for_tts(text: str) -> str:
         'yaml': 'yeahmel',
         'json': 'jason',
         'txt': 'text',
-        'toml': 'toemul',
+        'toml': 'tomul',
         'gif': 'jif',
         'wav': 'wave',
     }
