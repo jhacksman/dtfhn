@@ -45,8 +45,8 @@ def prepare_text_for_tts(text: str) -> str:
     # Extensions that have specific spoken pronunciations
     SPOKEN_EXTENSIONS = {
         'py': 'pie',
-        'yml': 'yeah mel',
-        'yaml': 'yeah mel',
+        'yml': 'yeahmel',
+        'yaml': 'yeahmel',
         'json': 'jason',
         'txt': 'text',
         'toml': 'toemul',
