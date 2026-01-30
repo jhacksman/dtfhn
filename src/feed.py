@@ -204,7 +204,12 @@ def generate_feed(output_path: Optional[str] = None) -> str:
         title = ep.get("title", f"DTF:HN for {date}")
         ET.SubElement(item, "title").text = title
 
-        ET.SubElement(item, "link").text = meta["website"]
+        # Episode page URL: dasherize title to match Starpod slug convention
+        import re
+        episode_slug = title.lower()
+        episode_slug = re.sub(r"[^a-z0-9\s-]", "", episode_slug)
+        episode_slug = "-".join(episode_slug.split())
+        ET.SubElement(item, "link").text = f"{meta['website']}/{episode_slug}"
         ET.SubElement(item, "guid", isPermaLink="false").text = f"dtfhn-{date}"
 
         # pubDate from manifest ISO string
@@ -226,6 +231,9 @@ def generate_feed(output_path: Optional[str] = None) -> str:
             length=str(filesize),
             type="audio/mpeg",
         )
+
+        # Episode artwork (falls back to show artwork)
+        ET.SubElement(item, f"{{{ITUNES_NS}}}image", href=ARTWORK_URL)
 
         # iTunes episode tags
         duration = ep.get("duration_seconds", 0)
