@@ -42,19 +42,15 @@ def prepare_text_for_tts(text: str) -> str:
     # Case-sensitive replacements first, then case-insensitive
     import re
     
+    # Generic file extension handler: .xyz → "dot X Y Z" (spells out up to 5 chars)
+    def _spell_extension(match):
+        ext = match.group(1).upper()
+        return ' dot ' + ' '.join(ext)
+    
+    text = re.sub(r'\.([a-zA-Z]{1,5})\b', _spell_extension, text)
+    
+    # Brand/product pronunciation fixes
     PRONUNCIATION_FIXES = [
-        # File extensions: .md, .py, .js, etc. — spell out the extension
-        (r'\.md\b', ' dot M D'),
-        (r'\.py\b', ' dot P Y'),
-        (r'\.js\b', ' dot J S'),
-        (r'\.ts\b', ' dot T S'),
-        (r'\.yml\b', ' dot Y M L'),
-        (r'\.yaml\b', ' dot YAML'),
-        (r'\.json\b', ' dot JSON'),
-        (r'\.toml\b', ' dot TOML'),
-        (r'\.sh\b', ' dot S H'),
-        (r'\.env\b', ' dot E N V'),
-        # Brand/product names
         (r'\bGrok\b', 'Grock'),
     ]
     
