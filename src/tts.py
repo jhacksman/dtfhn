@@ -23,19 +23,45 @@ MIN_WAV_SIZE_BYTES = 1000  # Minimum valid WAV file size
 
 def prepare_text_for_tts(text: str) -> str:
     """
-    Add em-dashes for natural breathing pauses.
+    Prepare text for TTS: pronunciation fixes and breathing pauses.
     
-    Qwen3-TTS interprets em-dashes as brief pauses. Adding them
-    at segment boundaries creates natural breathing room in the
-    final audio, preventing abrupt starts/stops.
+    Applies pronunciation substitutions for words the TTS model
+    mispronounces, then adds em-dashes at segment boundaries for
+    natural breathing room.
     
     Args:
         text: Raw segment text
     
     Returns:
-        Text with em-dashes prepended and appended
+        Text with pronunciation fixes and em-dashes
     """
     text = text.strip()
+    
+    # Pronunciation fixes — words the TTS model mispronounces
+    # Add new entries as discovered. Format: (pattern, replacement)
+    # Case-sensitive replacements first, then case-insensitive
+    import re
+    
+    PRONUNCIATION_FIXES = [
+        # File extensions: .md, .py, .js, etc. — spell out the extension
+        (r'\.md\b', ' dot M D'),
+        (r'\.py\b', ' dot P Y'),
+        (r'\.js\b', ' dot J S'),
+        (r'\.ts\b', ' dot T S'),
+        (r'\.yml\b', ' dot Y M L'),
+        (r'\.yaml\b', ' dot YAML'),
+        (r'\.json\b', ' dot JSON'),
+        (r'\.toml\b', ' dot TOML'),
+        (r'\.sh\b', ' dot S H'),
+        (r'\.env\b', ' dot E N V'),
+        # Brand/product names
+        (r'\bGrok\b', 'Grock'),
+    ]
+    
+    for pattern, replacement in PRONUNCIATION_FIXES:
+        text = re.sub(pattern, replacement, text)
+    
+    # Em-dash breathing pauses
     if not text.startswith('—'):
         text = '— ' + text
     if not text.endswith('—'):
