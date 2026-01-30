@@ -19,7 +19,7 @@ PODCAST_METADATA = {
     "copyright": "© 2026 Daily Tech Feed",
     "language": "en-us",
     "explicit": True,
-    "category_primary": "Technology > Tech News",
+    "category_primary": "Technology",
     "category_secondary": "News > Daily News",
     "website": "https://podcast.pdxh.org",
     "description_short": (

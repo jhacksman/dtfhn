@@ -9,6 +9,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# Load R2 credentials from .env if not already set
+if [ -z "${CF_R2_ACCESS_KEY_ID:-}" ] && [ -f .env ]; then
+    echo "Loading R2 credentials from .env"
+    set -a
+    source .env
+    set +a
+fi
+
 # Concurrent run protection
 LOCKFILE="/tmp/dtfhn-pipeline.lock"
 if [ -f "$LOCKFILE" ] && kill -0 "$(cat "$LOCKFILE")" 2>/dev/null; then
