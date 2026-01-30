@@ -13,9 +13,9 @@ from mutagen.id3 import ID3, TIT2, TPE1, TPE2, TALB, TCON, TDRC, TRCK, COMM
 # Canonical podcast metadata — single source of truth for feed, ID3 tags, and directories.
 PODCAST_METADATA = {
     "title": "Daily Tech Feed: Hacker News",
-    "author": "Jack Hacksman",
+    "author": "Daily Tech Feed",
     "owner_email": "jackhacksman@gmail.com",
-    "copyright": "© 2026 Jack Hacksman",
+    "copyright": "© 2026 Daily Tech Feed",
     "language": "en-us",
     "explicit": True,
     "category_primary": "Technology > Tech News",
