@@ -23,6 +23,7 @@ Environment variables required:
 """
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -87,6 +88,47 @@ def upload_bytes(s3_client, data: bytes, r2_key: str, content_type: str = "appli
         ContentType=content_type,
     )
     print(f"  ✓ Uploaded")
+
+
+def generate_episode_description(episode_date: str) -> str | None:
+    """Generate a description from the episode's stories.json.
+
+    Format: "Daily coverage of the top 10 stories on Hacker News for {date}.
+    Featuring: {story1}, {story2}, {story3}, {story4}, and more."
+
+    Returns None if stories.json is not found.
+    Keeps under 600 characters (Spotify limit).
+    """
+    episode_dir = Path(__file__).resolve().parent.parent / "data" / "episodes" / episode_date
+    stories_path = episode_dir / "stories.json"
+
+    if not stories_path.exists():
+        return None
+
+    stories = json.loads(stories_path.read_text(encoding="utf-8"))
+    if not stories:
+        return None
+
+    # Human-readable date from episode_date
+    date_part = episode_date[:10]
+    dt = datetime.strptime(date_part, "%Y-%m-%d")
+    human_date = f"{dt.strftime('%B')} {dt.day}, {dt.year}"
+
+    titles = [s.get("title", "") for s in stories if s.get("title")]
+
+    # Start with max 5 titles, trim down if over 600 chars
+    for num_titles in range(min(5, len(titles)), 0, -1):
+        featured = ", ".join(titles[:num_titles])
+        suffix = ", and more" if len(titles) > num_titles else ""
+        desc = (
+            f"Daily coverage of the top 10 stories on Hacker News for {human_date}. "
+            f"Featuring: {featured}{suffix}."
+        )
+        if len(desc) <= 600:
+            return desc
+
+    # Fallback
+    return f"Daily coverage of the top 10 stories on Hacker News for {human_date}."
 
 
 def find_mp3(episode_date: str, mp3_path: str = None) -> Path:
@@ -177,6 +219,9 @@ def register_episode(
 
     if not title:
         title = format_episode_title(episode_date)
+
+    if not description:
+        description = generate_episode_description(episode_date)
 
     mp3_filename = f"DTFHN-{episode_date}.mp3"
     filesize = mp3_path.stat().st_size
