@@ -245,6 +245,21 @@ def upload_episode(s3_client, episode_date: str, mp3_path: Path):
     upload_file(s3_client, str(mp3_path), r2_key, content_type="audio/mpeg")
 
 
+def find_chapters(episode_date: str) -> Path | None:
+    """Find the chapters JSON file for an episode."""
+    episode_dir = Path(__file__).resolve().parent.parent / "data" / "episodes" / episode_date
+    chapters_path = episode_dir / "chapters.json"
+    if chapters_path.exists():
+        return chapters_path
+    return None
+
+
+def upload_chapters(s3_client, episode_date: str, chapters_path: Path):
+    """Upload a chapters JSON file to R2."""
+    r2_key = f"{R2_PREFIX}/chapters/DTFHN-{episode_date}-chapters.json"
+    upload_file(s3_client, str(chapters_path), r2_key, content_type="application/json")
+
+
 def find_transcript(episode_date: str) -> Path | None:
     """Find the VTT transcript file for an episode.
 
@@ -304,11 +319,11 @@ def main():
 
     # Upload episode MP3
     if not args.feed_only:
-        print(f"\n[1/3] Finding episode MP3: {args.episode_date}")
+        print(f"\n[1/5] Finding episode MP3: {args.episode_date}")
         mp3_path = find_mp3(args.episode_date, args.mp3)
         print(f"  Found: {mp3_path}")
 
-        print(f"\n[2/3] Registering episode in manifest")
+        print(f"\n[2/5] Registering episode in manifest")
         register_episode(
             args.episode_date,
             mp3_path,
@@ -316,10 +331,17 @@ def main():
             description=args.description,
         )
 
-        print(f"\n[3/4] Uploading episode: {args.episode_date}")
+        print(f"\n[3/5] Uploading episode: {args.episode_date}")
         upload_episode(s3, args.episode_date, mp3_path)
 
-        print(f"\n[4/4] Uploading transcript: {args.episode_date}")
+        print(f"\n[4/5] Uploading chapters: {args.episode_date}")
+        chapters_path = find_chapters(args.episode_date)
+        if chapters_path:
+            upload_chapters(s3, args.episode_date, chapters_path)
+        else:
+            print(f"  No chapters.json found for {args.episode_date}, skipping.")
+
+        print(f"\n[5/5] Uploading transcript: {args.episode_date}")
         vtt_path = find_transcript(args.episode_date)
         if vtt_path:
             upload_transcript(s3, args.episode_date, vtt_path)
