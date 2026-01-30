@@ -25,7 +25,7 @@ echo "=== DTFHN Episode: ${EPISODE_DATE} ===" | tee "$LOG"
 echo "Started: $(date)" | tee -a "$LOG"
 
 # Step 1: Text pipeline (fetch, scripts, interstitials, intro/outro, metadata)
-echo "[1/2] Running text pipeline..." | tee -a "$LOG"
+echo "[1/3] Running text pipeline..." | tee -a "$LOG"
 python3 -u -c "
 import sys
 from src.pipeline import run_episode_pipeline
@@ -35,8 +35,16 @@ print(json.dumps(manifest, indent=2))
 " "${EPISODE_DATE}" 2>&1 | tee -a "$LOG"
 
 # Step 2: TTS
-echo "[2/2] Running TTS..." | tee -a "$LOG"
+echo "[2/3] Running TTS..." | tee -a "$LOG"
 python3 -u scripts/generate_episode_audio.py "${EPISODE_DATE}" --force 2>&1 | tee -a "$LOG"
+
+# Step 3: Upload to R2 + regenerate feed
+echo "[3/3] Uploading to R2..." | tee -a "$LOG"
+if [ -n "${CF_R2_ACCESS_KEY_ID:-}" ] && [ -n "${CF_R2_SECRET_ACCESS_KEY:-}" ]; then
+    python3 -u scripts/upload_to_r2.py "${EPISODE_DATE}" 2>&1 | tee -a "$LOG"
+else
+    echo "  SKIPPED: R2 credentials not set (CF_R2_ACCESS_KEY_ID, CF_R2_SECRET_ACCESS_KEY)" | tee -a "$LOG"
+fi
 
 echo "=== DONE: ${EPISODE_DATE} ===" | tee -a "$LOG"
 echo "Finished: $(date)" | tee -a "$LOG"

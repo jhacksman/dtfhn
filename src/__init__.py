@@ -52,6 +52,8 @@ from .pipeline import (
 )
 from .chapters import embed_chapters, generate_chapters_json, segments_to_chapters, load_stories_for_episode
 from .transcript import generate_vtt, generate_plain_transcript
+from .metadata import PODCAST_METADATA
+from .feed import generate_feed
 
 __all__ = [
     # HN
@@ -110,4 +112,8 @@ __all__ = [
     # Transcripts
     "generate_vtt",
     "generate_plain_transcript",
+    # Metadata
+    "PODCAST_METADATA",
+    # Feed
+    "generate_feed",
 ]

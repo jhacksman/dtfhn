@@ -364,4 +364,12 @@ curl -X POST http://192.168.0.134:7849/speak \
   --output test.wav
 ```
 
-36. **Episode dates include military time (YYYY-MM-DD-HHMM).** Default format is now `2026-01-29-0500` not `2026-01-29`. Allows multiple episodes per day to coexist. `format_date_for_tts()` strips the `-HHMM` suffix so spoken intros remain clean. The `topstories.json` API endpoint IS correct — it matches the HN front page at time of fetch. Story differences between episodes and the live front page are purely timing (HN churns fast).
+36. **PODCAST_METADATA is the single source of truth for show metadata.** Defined in `src/metadata.py`. Used by `embed_id3_metadata()` for MP3 tags and `src/feed.py` for RSS generation. Never hardcode show-level strings (author, album, genre, copyright) — import from PODCAST_METADATA.
+
+37. **RSS feed generation uses xml.etree.ElementTree.** When using `ET.SubElement()` with iTunes category elements, avoid `text=` as a kwarg — it collides with the element's `.text` property. Use `.set("text", value)` instead. Also, `register_namespace()` handles xmlns declarations automatically — don't also put them in the root element's attribute dict or you get duplicate namespace errors.
+
+38. **R2 upload uses S3-compatible API (boto3), not Bearer tokens.** The Cloudflare R2 management API uses Bearer tokens, but S3-compatible uploads need Access Key ID + Secret Access Key. Create these at Cloudflare Dashboard → R2 → Manage R2 API Tokens → S3 Auth type. Env vars: `CF_R2_ACCESS_KEY_ID`, `CF_R2_SECRET_ACCESS_KEY`.
+
+39. **run_episode.sh gracefully skips R2 upload when credentials are missing.** The pipeline won't fail if R2 credentials aren't set — it logs a skip message. This keeps the text+TTS pipeline usable without R2 configured.
+
+40. **Episode dates include military time (YYYY-MM-DD-HHMM).** Default format is now `2026-01-29-0500` not `2026-01-29`. Allows multiple episodes per day to coexist. `format_date_for_tts()` strips the `-HHMM` suffix so spoken intros remain clean. The `topstories.json` API endpoint IS correct — it matches the HN front page at time of fetch. Story differences between episodes and the live front page are purely timing (HN churns fast).
