@@ -42,10 +42,21 @@ def prepare_text_for_tts(text: str) -> str:
     # Case-sensitive replacements first, then case-insensitive
     import re
     
+    # Extensions that sound fine spoken naturally — don't spell these out
+    NATURAL_EXTENSIONS = {
+        'py', 'exe', 'app', 'zip', 'tar', 'gif', 'png', 'jpg', 'jpeg',
+        'wav', 'mp3', 'mp4', 'mov', 'avi', 'pdf', 'doc', 'csv', 'xml',
+        'html', 'css', 'sql', 'log', 'bin', 'bat', 'com', 'org', 'net',
+        'txt', 'yaml', 'toml', 'json', 'rust', 'go', 'vim',
+    }
+    
     # Generic file extension handler: .xyz → "dot X Y Z" (spells out up to 5 chars)
+    # Unless the extension sounds natural when spoken
     def _spell_extension(match):
-        ext = match.group(1).upper()
-        return ' dot ' + ' '.join(ext)
+        ext = match.group(1)
+        if ext.lower() in NATURAL_EXTENSIONS:
+            return f' dot {ext}'
+        return ' dot ' + ' '.join(ext.upper())
     
     text = re.sub(r'\.([a-zA-Z]{1,5})\b', _spell_extension, text)
     
