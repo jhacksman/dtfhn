@@ -10,6 +10,35 @@ from typing import Optional
 from mutagen.id3 import ID3, TIT2, TPE1, TPE2, TALB, TCON, TDRC, TRCK, COMM
 
 
+# Canonical podcast metadata — single source of truth for feed, ID3 tags, and directories.
+PODCAST_METADATA = {
+    "title": "Daily Tech Feed: Hacker News",
+    "author": "Jack Hacksman",
+    "owner_email": "jackhacksman@gmail.com",
+    "copyright": "© 2026 Jack Hacksman",
+    "language": "en-us",
+    "explicit": True,
+    "category_primary": "Technology > Tech News",
+    "category_secondary": "News > Daily News",
+    "website": "https://podcast.pdxh.org",
+    "description_short": (
+        "Your Daily Tech Feed for coverage of the top 10 stories on Hacker News."
+        " Informed commentary and analysis. We are DTF:HN."
+    ),
+    "description_long": (
+        "Daily Tech Feed: Hacker News delivers daily coverage of the top 10 stories"
+        " from the Hacker News front page. Each episode breaks down the biggest"
+        " launches, releases, papers, and discussions in technology with informed"
+        " commentary and analysis. Subscribe to DTF:HN to stay ahead of the curve"
+        " while there's still a curve to be ahead of."
+    ),
+    # ID3 tag values (derived from above)
+    "album": "Daily Tech Feed",
+    "album_artist": "Daily Tech Feed",
+    "genre": "Technology",
+}
+
+
 def embed_id3_metadata(
     mp3_path: str,
     episode_date: str,
@@ -52,14 +81,14 @@ def embed_id3_metadata(
     if episode_number is None:
         episode_number = dt.timetuple().tm_yday  # Day of year
 
-    title = f"Daily Tech Feed - {episode_date}"
+    title = f"{PODCAST_METADATA['album']} - {episode_date}"
 
     # Core identification
     audio.add(TIT2(encoding=3, text=title))
-    audio.add(TPE1(encoding=3, text="Jack Hacksman"))
-    audio.add(TPE2(encoding=3, text="Daily Tech Feed"))
-    audio.add(TALB(encoding=3, text="Daily Tech Feed"))
-    audio.add(TCON(encoding=3, text="Technology"))
+    audio.add(TPE1(encoding=3, text=PODCAST_METADATA["author"]))
+    audio.add(TPE2(encoding=3, text=PODCAST_METADATA["album_artist"]))
+    audio.add(TALB(encoding=3, text=PODCAST_METADATA["album"]))
+    audio.add(TCON(encoding=3, text=PODCAST_METADATA["genre"]))
     audio.add(TDRC(encoding=3, text=episode_date))
     audio.add(TRCK(encoding=3, text=str(episode_number)))
 

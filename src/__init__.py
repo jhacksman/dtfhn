@@ -50,6 +50,7 @@ from .pipeline import (
     build_segment_dicts,
     generate_episode_metadata,
 )
+from .metadata import embed_id3_metadata, PODCAST_METADATA
 from .chapters import embed_chapters, generate_chapters_json, segments_to_chapters, load_stories_for_episode
 from .transcript import generate_vtt, generate_plain_transcript
 
@@ -103,6 +104,9 @@ __all__ = [
     "finalize_episode_audio",
     "build_segment_dicts",
     "generate_episode_metadata",
+    # Metadata
+    "embed_id3_metadata",
+    "PODCAST_METADATA",
     # Chapters
     "embed_chapters",
     "generate_chapters_json",
