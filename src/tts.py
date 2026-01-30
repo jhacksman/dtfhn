@@ -42,19 +42,31 @@ def prepare_text_for_tts(text: str) -> str:
     # Case-sensitive replacements first, then case-insensitive
     import re
     
-    # Extensions that sound fine spoken naturally — don't spell these out
+    # Extensions that have specific spoken pronunciations
+    SPOKEN_EXTENSIONS = {
+        'py': 'pie',
+        'yml': 'yeah mel',
+        'yaml': 'yeah mel',
+        'sql': 'sequel',
+        'toml': 'tom L',
+    }
+    
+    # Extensions that sound fine spoken as-is (not spelled out)
     NATURAL_EXTENSIONS = {
-        'py', 'exe', 'app', 'zip', 'tar', 'gif', 'png', 'jpg', 'jpeg',
-        'wav', 'mp3', 'mp4', 'mov', 'avi', 'pdf', 'doc', 'csv', 'xml',
-        'html', 'css', 'sql', 'log', 'bin', 'bat', 'com', 'org', 'net',
-        'txt', 'yaml', 'toml', 'json', 'rust', 'go', 'vim',
+        'zip', 'tar', 'gif', 'png', 'jpg',
+        'wav', 'pdf', 'doc', 'csv',
+        'log', 'bin', 'bat', 'txt', 'json',
+        'go', 'vim',
     }
     
     # Generic file extension handler: .xyz → "dot X Y Z" (spells out up to 5 chars)
     # Unless the extension sounds natural when spoken
     def _spell_extension(match):
         ext = match.group(1)
-        if ext.lower() in NATURAL_EXTENSIONS:
+        low = ext.lower()
+        if low in SPOKEN_EXTENSIONS:
+            return f' dot {SPOKEN_EXTENSIONS[low]}'
+        if low in NATURAL_EXTENSIONS:
             return f' dot {ext}'
         return ' dot ' + ' '.join(ext.upper())
     
