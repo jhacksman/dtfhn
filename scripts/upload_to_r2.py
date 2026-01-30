@@ -6,9 +6,14 @@ Uploads:
   1. Episode MP3 → dtfhn/episodes/DTFHN-{date}.mp3
   2. RSS feed   → dtfhn/feed.xml
 
+The upload script also registers the episode in data/feed_episodes.json
+(the manifest), then regenerates the feed from that manifest.
+
 Usage:
   python3 scripts/upload_to_r2.py 2026-01-29-1448
   python3 scripts/upload_to_r2.py 2026-01-29-1448 --mp3 /path/to/episode.mp3
+  python3 scripts/upload_to_r2.py 2026-01-29-1448 --title "DTF:HN for January 29, 2026"
+  python3 scripts/upload_to_r2.py 2026-01-29-1448 --description "Coverage of..."
   python3 scripts/upload_to_r2.py --feed-only  # Just regenerate and upload feed
 
 Environment variables required:
@@ -19,8 +24,9 @@ Environment variables required:
 
 import argparse
 import os
+import subprocess
 import sys
-import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Add project root to path
@@ -83,21 +89,23 @@ def upload_bytes(s3_client, data: bytes, r2_key: str, content_type: str = "appli
     print(f"  ✓ Uploaded")
 
 
-def upload_episode(s3_client, episode_date: str, mp3_path: str = None):
-    """Upload an episode MP3 to R2.
+def find_mp3(episode_date: str, mp3_path: str = None) -> Path:
+    """Find the MP3 file for an episode.
 
-    If mp3_path is not provided, tries:
-    1. data/episodes/{date}/DTFHN-{date}.mp3
-    2. data/episodes/{date}/episode.mp3
-    3. LanceDB mp3_binary
+    Checks in order:
+    1. Explicit --mp3 path
+    2. data/episodes/{date}/DTFHN-{date}.mp3
+    3. data/episodes/{date}/episode.mp3
+
+    Returns the path or exits with error.
     """
-    r2_key = f"{R2_PREFIX}/episodes/DTFHN-{episode_date}.mp3"
+    if mp3_path:
+        p = Path(mp3_path)
+        if p.exists():
+            return p
+        print(f"  ERROR: Specified MP3 not found: {mp3_path}")
+        sys.exit(1)
 
-    if mp3_path and Path(mp3_path).exists():
-        upload_file(s3_client, mp3_path, r2_key, content_type="audio/mpeg")
-        return
-
-    # Try filesystem paths
     episode_dir = Path(__file__).resolve().parent.parent / "data" / "episodes" / episode_date
     candidates = [
         episode_dir / f"DTFHN-{episode_date}.mp3",
@@ -105,26 +113,98 @@ def upload_episode(s3_client, episode_date: str, mp3_path: str = None):
     ]
     for candidate in candidates:
         if candidate.exists():
-            upload_file(s3_client, str(candidate), r2_key, content_type="audio/mpeg")
-            return
-
-    # Fall back to LanceDB
-    print(f"  No MP3 file found on disk, trying LanceDB...")
-    from src.storage import get_episode_mp3
-    mp3_bytes = get_episode_mp3(episode_date)
-    if mp3_bytes:
-        upload_bytes(s3_client, mp3_bytes, r2_key, content_type="audio/mpeg")
-        return
+            return candidate
 
     print(f"  ERROR: No MP3 found for episode {episode_date}")
+    print(f"  Looked in: {episode_dir}")
     sys.exit(1)
+
+
+def get_mp3_duration(mp3_path: Path) -> int:
+    """Get MP3 duration in seconds using ffprobe."""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "quiet", "-show_entries",
+                "format=duration", "-of", "csv=p=0", str(mp3_path),
+            ],
+            capture_output=True, text=True, check=True,
+        )
+        return int(float(result.stdout.strip()))
+    except Exception as e:
+        print(f"  Warning: Could not get duration via ffprobe: {e}")
+        return 0
+
+
+def format_episode_title(episode_date: str) -> str:
+    """Format a clean episode title from the date string.
+
+    '2026-01-29-1448' → 'DTF:HN for January 29, 2026'
+    """
+    date_part = episode_date[:10]
+    dt = datetime.strptime(date_part, "%Y-%m-%d")
+    return f"DTF:HN for {dt.strftime('%B')} {dt.day}, {dt.year}"
+
+
+def format_pub_date(episode_date: str) -> str:
+    """Format an ISO 8601 pub_date from the episode date string.
+
+    '2026-01-29-1448' → '2026-01-29T14:48:00Z'
+    """
+    date_part = episode_date[:10]
+    dt = datetime.strptime(date_part, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+
+    if len(episode_date) > 10:
+        time_part = episode_date[11:]
+        if len(time_part) == 4 and time_part.isdigit():
+            dt = dt.replace(hour=int(time_part[:2]), minute=int(time_part[2:]))
+
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def register_episode(
+    episode_date: str,
+    mp3_path: Path,
+    title: str = None,
+    description: str = None,
+) -> list[dict]:
+    """Register an episode in the manifest (data/feed_episodes.json).
+
+    Computes filesize and duration from the MP3 file.
+    Returns the updated manifest.
+    """
+    from src.feed import add_episode_to_manifest
+
+    if not title:
+        title = format_episode_title(episode_date)
+
+    mp3_filename = f"DTFHN-{episode_date}.mp3"
+    filesize = mp3_path.stat().st_size
+    duration = get_mp3_duration(mp3_path)
+    pub_date = format_pub_date(episode_date)
+
+    return add_episode_to_manifest(
+        date=episode_date,
+        title=title,
+        mp3_filename=mp3_filename,
+        filesize_bytes=filesize,
+        duration_seconds=duration,
+        pub_date=pub_date,
+        description=description,
+    )
+
+
+def upload_episode(s3_client, episode_date: str, mp3_path: Path):
+    """Upload an episode MP3 to R2."""
+    r2_key = f"{R2_PREFIX}/episodes/DTFHN-{episode_date}.mp3"
+    upload_file(s3_client, str(mp3_path), r2_key, content_type="audio/mpeg")
 
 
 def upload_feed(s3_client):
     """Regenerate and upload the RSS feed."""
     from src.feed import generate_feed
 
-    print("  Generating RSS feed...")
+    print("  Generating RSS feed from manifest...")
     xml_str = generate_feed()
     feed_bytes = xml_str.encode("utf-8")
 
@@ -137,6 +217,8 @@ def main():
     parser = argparse.ArgumentParser(description="Upload DTFHN episode to R2")
     parser.add_argument("episode_date", nargs="?", help="Episode date (YYYY-MM-DD or YYYY-MM-DD-HHMM)")
     parser.add_argument("--mp3", help="Path to MP3 file (auto-detected if omitted)")
+    parser.add_argument("--title", help="Episode title (auto-generated if omitted)")
+    parser.add_argument("--description", help="Episode description for the feed")
     parser.add_argument("--feed-only", action="store_true", help="Only regenerate and upload feed")
     parser.add_argument("--no-feed", action="store_true", help="Skip feed regeneration")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be uploaded without uploading")
@@ -148,7 +230,9 @@ def main():
     if args.dry_run:
         print("DRY RUN — no uploads will be performed")
         if args.episode_date:
-            print(f"  Would upload: DTFHN-{args.episode_date}.mp3 → {R2_PREFIX}/episodes/")
+            mp3 = find_mp3(args.episode_date, args.mp3)
+            print(f"  Would upload: {mp3} → {R2_PREFIX}/episodes/DTFHN-{args.episode_date}.mp3")
+            print(f"  Would register in manifest: data/feed_episodes.json")
         if not args.no_feed:
             print(f"  Would upload: feed.xml → {R2_PREFIX}/feed.xml")
         return
@@ -157,12 +241,26 @@ def main():
 
     # Upload episode MP3
     if not args.feed_only:
-        print(f"\n[1/2] Uploading episode: {args.episode_date}")
-        upload_episode(s3, args.episode_date, args.mp3)
+        print(f"\n[1/3] Finding episode MP3: {args.episode_date}")
+        mp3_path = find_mp3(args.episode_date, args.mp3)
+        print(f"  Found: {mp3_path}")
+
+        print(f"\n[2/3] Registering episode in manifest")
+        register_episode(
+            args.episode_date,
+            mp3_path,
+            title=args.title,
+            description=args.description,
+        )
+
+        print(f"\n[3/3] Uploading episode: {args.episode_date}")
+        upload_episode(s3, args.episode_date, mp3_path)
+    else:
+        print()
 
     # Upload feed
     if not args.no_feed:
-        step = "2/2" if not args.feed_only else "1/1"
+        step = "Feed" if args.feed_only else "Feed update"
         print(f"\n[{step}] Uploading RSS feed")
         upload_feed(s3)
 

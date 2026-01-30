@@ -370,6 +370,10 @@ curl -X POST http://192.168.0.134:7849/speak \
 
 38. **R2 upload uses S3-compatible API (boto3), not Bearer tokens.** The Cloudflare R2 management API uses Bearer tokens, but S3-compatible uploads need Access Key ID + Secret Access Key. Create these at Cloudflare Dashboard → R2 → Manage R2 API Tokens → S3 Auth type. Env vars: `CF_R2_ACCESS_KEY_ID`, `CF_R2_SECRET_ACCESS_KEY`.
 
+41. **Feed uses explicit manifest, NOT auto-discovery.** Episodes in the RSS feed come ONLY from `data/feed_episodes.json`. No directory scanning, no LanceDB queries, no auto-discovery. The upload script (`scripts/upload_to_r2.py`) registers episodes in the manifest when uploading. To add an episode: upload it via the script. To remove one: edit the manifest JSON. This prevents test episodes, duplicates, and ghost entries from polluting the feed.
+
+42. **Episode descriptions come from the manifest, not transcripts.** The old feed.py used transcript snippets as descriptions — ugly and unpredictable. Now descriptions are explicit strings in the manifest. If missing, falls back to a generic "Daily coverage of the top 10 stories on Hacker News." Human-written descriptions are always better than auto-generated ones.
+
 39. **run_episode.sh gracefully skips R2 upload when credentials are missing.** The pipeline won't fail if R2 credentials aren't set — it logs a skip message. This keeps the text+TTS pipeline usable without R2 configured.
 
 40. **Episode dates include military time (YYYY-MM-DD-HHMM).** Default format is now `2026-01-29-0500` not `2026-01-29`. Allows multiple episodes per day to coexist. `format_date_for_tts()` strips the `-HHMM` suffix so spoken intros remain clean. The `topstories.json` API endpoint IS correct — it matches the HN front page at time of fetch. Story differences between episodes and the live front page are purely timing (HN churns fast).
