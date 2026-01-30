@@ -14,7 +14,7 @@ from mutagen.id3 import ID3, TIT2, TPE1, TPE2, TALB, TCON, TDRC, TRCK, COMM
 PODCAST_METADATA = {
     "title": "Daily Tech Feed: Hacker News",
     "author": "Daily Tech Feed",
-    "owner_email": "jackhacksman@gmail.com",
+    "owner_email": "podcast@pdxhs.org",
     "copyright": "© 2026 Daily Tech Feed",
     "language": "en-us",
     "explicit": True,
