@@ -56,7 +56,7 @@ def prepare_text_for_tts(text: str) -> str:
     
     # Extensions that sound fine spoken as-is (not spelled out)
     NATURAL_EXTENSIONS = {
-        'zip', 'log', 'bin', 'bat',
+        'zip', 'log', 'bin', 'bat', 'doc', 'go',
     }
     
     # Generic file extension handler: .xyz → "dot X Y Z" (spells out up to 5 chars)
