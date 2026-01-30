@@ -241,6 +241,15 @@ def generate_feed(output_path: Optional[str] = None) -> str:
         )
         ET.SubElement(item, f"{{{ITUNES_NS}}}episodeType").text = "full"
 
+        # Season = year, Episode = day of year
+        date_part = date[:10]
+        try:
+            ep_dt = datetime.strptime(date_part, "%Y-%m-%d")
+            ET.SubElement(item, f"{{{ITUNES_NS}}}season").text = str(ep_dt.year)
+            ET.SubElement(item, f"{{{ITUNES_NS}}}episode").text = str(ep_dt.timetuple().tm_yday)
+        except ValueError:
+            pass
+
     # Serialize
     tree = ET.ElementTree(rss)
     ET.indent(tree, space="  ")
