@@ -525,7 +525,7 @@ def main():
         
         # Transcode to MP3
         print("Transcoding to MP3 (128k mono)...")
-        episode_mp3 = episode_dir / "episode.mp3"
+        episode_mp3 = episode_dir / f"DTFHN-{episode_date}.mp3"
         if not transcode_to_mp3(episode_wav, episode_mp3):
             print("ERROR: Failed to transcode to MP3")
             sys.exit(1)
@@ -586,7 +586,7 @@ def main():
         
         # Create Telegram-friendly version if needed
         print("Checking Telegram file size...")
-        episode_telegram = episode_dir / "episode_telegram.mp3"
+        episode_telegram = episode_dir / f"DTFHN-{episode_date}-telegram.mp3"
         telegram_created = create_telegram_mp3(episode_mp3, episode_telegram)
         print()
         
