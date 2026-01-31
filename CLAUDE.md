@@ -397,3 +397,7 @@ curl -X POST http://192.168.0.134:7849/speak \
 51. **Post-upload verification catches R2/CDN issues.** After R2 upload, the pipeline curls the episode URL and logs the HTTP status. Non-fatal because CDN propagation delay can cause temporary 404s. The warning is logged for manual review if needed.
 
 52. **Pipeline is now 5 steps.** Step 1: text pipeline, Step 2: TTS, Step 3: R2 upload, Step 4: Cloudflare Pages rebuild, Step 5: Telegram notification. The pre-flight TTS check runs between Steps 1 and 2. Post-upload verification runs between Steps 3 and 4.
+
+53. **Episode descriptions include article URLs and HN discussion links.** `generate_episode_description()` produces a two-tier format: prose summary first (within Spotify's 600-char preview window), then a numbered story list with article URLs and HN discussion links. Total kept under 4,000 chars (Apple limit). `generate_content_encoded()` produces an HTML version with `<a href>` links for `<content:encoded>`. Both are stored in `feed_episodes.json` manifest (`description` and `content_encoded` fields). Most podcast apps auto-linkify plaintext URLs, so the plain `<description>` is the primary format; `<content:encoded>` is progressive enhancement.
+
+54. **Stories with no article URL are handled gracefully.** Some HN posts (e.g., "Launch HN") have empty `url` fields. The description generator skips the article URL line but still includes the HN discussion link. The HTML version does the same.
