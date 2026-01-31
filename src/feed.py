@@ -68,6 +68,7 @@ def add_episode_to_manifest(
     duration_seconds: int,
     pub_date: str,
     description: Optional[str] = None,
+    content_encoded: Optional[str] = None,
 ) -> list[dict]:
     """Add an episode to the manifest. Prevents duplicates by date.
 
@@ -90,6 +91,8 @@ def add_episode_to_manifest(
         "duration_seconds": duration_seconds,
         "pub_date": pub_date,
     }
+    if content_encoded:
+        entry["content_encoded"] = content_encoded
     episodes.append(entry)
 
     # Sort by date descending (newest first)
@@ -255,6 +258,12 @@ def generate_feed(output_path: Optional[str] = None) -> str:
             )
 
         ET.SubElement(item, f"{{{ITUNES_NS}}}author").text = meta["author"]
+        # content:encoded — HTML version for apps that support rich descriptions
+        content_encoded = ep.get("content_encoded")
+        if content_encoded:
+            ce = ET.SubElement(item, f"{{{CONTENT_NS}}}encoded")
+            ce.text = content_encoded
+
         ET.SubElement(item, f"{{{ITUNES_NS}}}summary").text = description
         ET.SubElement(item, f"{{{ITUNES_NS}}}explicit").text = (
             "true" if meta["explicit"] else "false"

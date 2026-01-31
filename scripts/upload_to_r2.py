@@ -93,11 +93,22 @@ def upload_bytes(s3_client, data: bytes, r2_key: str, content_type: str = "appli
 def generate_episode_description(episode_date: str) -> str | None:
     """Generate a description from the episode's stories.json.
 
-    Format: "Your Daily Tech Feed covering the top 10 stories on Hacker News for {date}.
-    Featuring: {story1}, {story2}, {story3}, {story4}, and more."
+    Format:
+        Your Daily Tech Feed covering the top N stories on Hacker News for {date}.
+        Featuring: {title1}, {title2}, {title3}, and more.
+
+        Stories covered:
+        1. {title1}
+           {article_url}
+           HN discussion: https://news.ycombinator.com/item?id={hn_id}
+        2. {title2}
+           ...
+
+    The first line (prose summary) stays within ~600 chars for Spotify preview.
+    Total description kept under 4,000 chars (Apple Podcasts limit).
+    Plaintext only — no HTML, no markdown. Apps auto-linkify URLs.
 
     Returns None if stories.json is not found.
-    Keeps under 600 characters (Spotify limit).
     """
     episode_dir = Path(__file__).resolve().parent.parent / "data" / "episodes" / episode_date
     stories_path = episode_dir / "stories.json"
@@ -114,21 +125,115 @@ def generate_episode_description(episode_date: str) -> str | None:
     dt = datetime.strptime(date_part, "%Y-%m-%d")
     human_date = f"{dt.strftime('%B')} {dt.day}, {dt.year}"
 
+    story_count = len(stories)
     titles = [s.get("title", "") for s in stories if s.get("title")]
 
-    # Start with max 5 titles, trim down if over 600 chars
+    # Build prose summary (first line — what Spotify shows in 600-char preview)
     for num_titles in range(min(5, len(titles)), 0, -1):
         featured = ", ".join(titles[:num_titles])
         suffix = ", and more" if len(titles) > num_titles else ""
-        desc = (
-            f"Your Daily Tech Feed covering the top 10 stories on Hacker News for {human_date}. "
+        prose = (
+            f"Your Daily Tech Feed covering the top {story_count} stories "
+            f"on Hacker News for {human_date}. "
             f"Featuring: {featured}{suffix}."
         )
-        if len(desc) <= 600:
-            return desc
+        if len(prose) <= 600:
+            break
+    else:
+        prose = f"Your Daily Tech Feed covering the top {story_count} stories on Hacker News for {human_date}."
 
-    # Fallback
-    return f"Your Daily Tech Feed covering the top 10 stories on Hacker News for {human_date}."
+    # Build numbered story list with URLs
+    CHAR_LIMIT = 4000
+    story_lines = []
+    for i, story in enumerate(stories, 1):
+        title = story.get("title", f"Story {i}")
+        url = story.get("url", "")
+        hn_id = story.get("id", "")
+
+        entry = f"{i}. {title}"
+        if url:
+            entry += f"\n   {url}"
+        if hn_id:
+            entry += f"\n   HN discussion: https://news.ycombinator.com/item?id={hn_id}"
+
+        story_lines.append(entry)
+
+    # Assemble full description, truncating story list if over limit
+    header = f"{prose}\n\nStories covered:\n"
+    while story_lines:
+        body = "\n\n".join(story_lines)
+        full_desc = header + body
+        if len(full_desc) <= CHAR_LIMIT:
+            return full_desc
+        # Remove last story to fit
+        story_lines.pop()
+
+    # Fallback: just the prose summary
+    return prose
+
+
+def generate_content_encoded(episode_date: str) -> str | None:
+    """Generate an HTML-formatted description for <content:encoded>.
+
+    Progressive enhancement: apps that support HTML get clickable links.
+    The plain <description> also has URLs as plaintext fallback.
+
+    Returns None if stories.json is not found.
+    """
+    episode_dir = Path(__file__).resolve().parent.parent / "data" / "episodes" / episode_date
+    stories_path = episode_dir / "stories.json"
+
+    if not stories_path.exists():
+        return None
+
+    stories = json.loads(stories_path.read_text(encoding="utf-8"))
+    if not stories:
+        return None
+
+    date_part = episode_date[:10]
+    dt = datetime.strptime(date_part, "%Y-%m-%d")
+    human_date = f"{dt.strftime('%B')} {dt.day}, {dt.year}"
+
+    story_count = len(stories)
+    titles = [s.get("title", "") for s in stories if s.get("title")]
+
+    # Prose summary
+    for num_titles in range(min(5, len(titles)), 0, -1):
+        featured = ", ".join(titles[:num_titles])
+        suffix = ", and more" if len(titles) > num_titles else ""
+        prose = (
+            f"Your Daily Tech Feed covering the top {story_count} stories "
+            f"on Hacker News for {human_date}. "
+            f"Featuring: {featured}{suffix}."
+        )
+        if len(prose) <= 600:
+            break
+    else:
+        prose = f"Your Daily Tech Feed covering the top {story_count} stories on Hacker News for {human_date}."
+
+    # Build HTML story list
+    import html as html_mod
+    lines = [f"<p>{html_mod.escape(prose)}</p>", "<p><strong>Stories covered:</strong></p>", "<ol>"]
+
+    for story in stories:
+        title = html_mod.escape(story.get("title", "Untitled"))
+        url = story.get("url", "")
+        hn_id = story.get("id", "")
+
+        li = f"<li>{title}"
+        links = []
+        if url:
+            links.append(f'<a href="{html_mod.escape(url)}">Article</a>')
+        if hn_id:
+            hn_url = f"https://news.ycombinator.com/item?id={hn_id}"
+            links.append(f'<a href="{hn_url}">HN Discussion</a>')
+        if links:
+            li += f"<br/>({' | '.join(links)})"
+        li += "</li>"
+        lines.append(li)
+
+    lines.append("</ol>")
+    return "\n".join(lines)
 
 
 def find_mp3(episode_date: str, mp3_path: str = None) -> Path:
@@ -223,6 +328,8 @@ def register_episode(
     if not description:
         description = generate_episode_description(episode_date)
 
+    content_encoded = generate_content_encoded(episode_date)
+
     mp3_filename = f"DTFHN-{episode_date}.mp3"
     filesize = mp3_path.stat().st_size
     duration = get_mp3_duration(mp3_path)
@@ -236,6 +343,7 @@ def register_episode(
         duration_seconds=duration,
         pub_date=pub_date,
         description=description,
+        content_encoded=content_encoded,
     )
 
 

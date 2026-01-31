@@ -159,18 +159,23 @@ def fetch_stories(limit: int = 10, verbose: bool = True) -> list[Story]:
     Returns:
         List of Story objects
     """
+    # Fetch extra IDs to account for non-story items (jobs, polls)
+    fetch_limit = limit + 10
     if verbose:
-        print(f"Fetching top {limit} story IDs...")
+        print(f"Fetching top {fetch_limit} story IDs (need {limit} stories)...")
 
-    story_ids = fetch_top_story_ids(limit)
+    story_ids = fetch_top_story_ids(fetch_limit)
     if not story_ids:
         print("ERROR: No story IDs fetched!")
         return []
 
     stories = []
     for idx, story_id in enumerate(story_ids):
+        if len(stories) >= limit:
+            break
+
         if verbose:
-            print(f"\nFetching story {idx + 1}/{limit}: {story_id}")
+            print(f"\nFetching story {idx + 1}: {story_id}")
 
         item = fetch_item(story_id)
         if not item or item.get("type") != "story":
