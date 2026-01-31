@@ -25,9 +25,9 @@ notify() {
     local message="$2"
     echo "[notify] ${status}: ${message}" | tee -a "${LOG:-/dev/null}"
     # Send via clawdbot system event (local gateway, no auth needed)
-    clawdbot system event \
+    openclaw system event \
         --text "DTFHN Pipeline ${status}: ${message}" \
-        --mode now 2>&1 || echo "[notify] WARNING: clawdbot system event failed" | tee -a "${LOG:-/dev/null}"
+        --mode now 2>&1 || echo "[notify] WARNING: openclaw system event failed" | tee -a "${LOG:-/dev/null}"
 }
 
 # Concurrent run protection
