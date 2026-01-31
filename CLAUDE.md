@@ -390,4 +390,10 @@ curl -X POST http://192.168.0.134:7849/speak \
 
 48. **Pipeline is fully autonomous as of 2026-01-31.** The 5 AM cron job successfully ran the complete pipeline (fetch → scripts → TTS → upload → feed → deploy) with zero human intervention. See `ANALYSIS-autonomy.md` for the full audit. Remaining gaps: (a) Telegram/Signal delivery not implemented, (b) no retry logic for transient failures, (c) no post-upload verification.
 
-49. **Telegram file size is a structural problem.** 24-min episodes at 128k = ~22MB. Even at 96k mono = ~17MB, exceeding Telegram's 16MB bot limit. Solutions: send R2 URL instead of file, use 64k bitrate (~11MB), or use Signal (100MB limit). The `create_telegram_mp3()` function creates the file but nothing sends it — delivery step was never added to `run_episode.sh`.
+49. **Telegram delivery sends URL, not file.** The old approach of creating a 96k mono Telegram MP3 was removed — it exceeded Telegram's 16MB bot limit anyway. Instead, Step 5 of `run_episode.sh` sends a Telegram message (via `openclaw message send --channel telegram --target 6151859458`) with the R2 episode URL, story count, and duration. Non-fatal (`|| true`). The `create_telegram_mp3()` function and `TELEGRAM_SIZE_LIMIT` constant were removed from `generate_episode_audio.py`.
+
+50. **TTS pre-flight health check prevents wasted pipeline time.** Before Step 2, `run_episode.sh` curls `http://192.168.0.134:7849/` with 3 retries and 30s sleep between. If all fail, it notifies and exits. This is the ONE fatal new check — no point running a 45-min TTS step against a dead server. All other new checks (post-upload verify, Telegram notify) are non-fatal.
+
+51. **Post-upload verification catches R2/CDN issues.** After R2 upload, the pipeline curls the episode URL and logs the HTTP status. Non-fatal because CDN propagation delay can cause temporary 404s. The warning is logged for manual review if needed.
+
+52. **Pipeline is now 5 steps.** Step 1: text pipeline, Step 2: TTS, Step 3: R2 upload, Step 4: Cloudflare Pages rebuild, Step 5: Telegram notification. The pre-flight TTS check runs between Steps 1 and 2. Post-upload verification runs between Steps 3 and 4.
