@@ -28,7 +28,6 @@ import fcntl
 import json
 import time
 import argparse
-import subprocess
 import requests
 from pathlib import Path
 from datetime import datetime
@@ -217,57 +216,6 @@ def list_jobs() -> bool:
             return False
     except Exception as e:
         print(f"Error listing jobs: {e}")
-        return False
-
-
-# Telegram file size limit (Clawdbot media limit is 16MB, leave 1MB margin)
-TELEGRAM_SIZE_LIMIT = 15 * 1024 * 1024  # 15 MB
-
-
-def create_telegram_mp3(source_mp3: Path, output_mp3: Path) -> bool:
-    """
-    Create a Telegram-friendly MP3 (96k mono) if the source exceeds 15MB.
-    
-    Args:
-        source_mp3: Path to the full-quality episode.mp3
-        output_mp3: Path to save the Telegram version (e.g., episode_telegram.mp3)
-    
-    Returns:
-        True if a Telegram version was created, False if not needed or failed
-    """
-    source_size = source_mp3.stat().st_size
-    if source_size <= TELEGRAM_SIZE_LIMIT:
-        print(f"  MP3 is {source_size / 1024 / 1024:.1f} MB — under {TELEGRAM_SIZE_LIMIT // (1024*1024)} MB limit, no Telegram version needed.")
-        return False
-    
-    print(f"  MP3 is {source_size / 1024 / 1024:.1f} MB — exceeds {TELEGRAM_SIZE_LIMIT // (1024*1024)} MB limit, creating Telegram version...")
-    try:
-        result = subprocess.run(
-            [
-                "ffmpeg", "-y", "-i", str(source_mp3),
-                "-ac", "1",           # mono
-                "-b:a", "96k",        # 96 kbps
-                "-map_metadata", "0", # preserve ID3 tags
-                str(output_mp3),
-            ],
-            capture_output=True, text=True, timeout=120,
-        )
-        if result.returncode != 0:
-            print(f"  ERROR: ffmpeg failed: {result.stderr[:200]}")
-            return False
-        
-        tg_size = output_mp3.stat().st_size
-        print(f"  Telegram MP3: {output_mp3.name} ({tg_size / 1024 / 1024:.1f} MB)")
-        
-        if tg_size > TELEGRAM_SIZE_LIMIT:
-            print(f"  WARNING: Telegram version still exceeds limit ({tg_size / 1024 / 1024:.1f} MB)!")
-        
-        return True
-    except FileNotFoundError:
-        print("  ERROR: ffmpeg not found. Install ffmpeg to enable Telegram transcoding.")
-        return False
-    except subprocess.TimeoutExpired:
-        print("  ERROR: ffmpeg timed out after 120s")
         return False
 
 
@@ -584,10 +532,6 @@ def main():
         )
         print()
         
-        # Create Telegram-friendly version if needed
-        print("Checking Telegram file size...")
-        episode_telegram = episode_dir / f"DTFHN-{episode_date}-telegram.mp3"
-        telegram_created = create_telegram_mp3(episode_mp3, episode_telegram)
         print()
         
         # Cleanup temp WAVs
@@ -606,9 +550,6 @@ def main():
         print(f"Episode {episode_date} complete!")
         print(f"  Duration: {duration:.1f}s ({duration / 60:.1f} min)")
         print(f"  MP3 size: {mp3_size / 1024 / 1024:.1f} MB")
-        if telegram_created:
-            tg_size = episode_telegram.stat().st_size
-            print(f"  Telegram: {tg_size / 1024 / 1024:.1f} MB (96k mono)")
         print(f"  Segments: {len(segment_metadata)}")
         print(f"  TTS time: {tts_time:.1f}s")
         print("=" * 50)
