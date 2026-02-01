@@ -442,10 +442,19 @@ def _strip_preamble(text: str) -> str:
     )
     text = mid_preamble_re.sub("", text).strip()
     
-    # Remove duplicate "You're listening to D T F H N" prefix
+    # Truncate everything before the known static prefix.
+    # This catches ALL chain-of-thought / preamble leakage regardless of pattern.
     dtfhn_prefix = "You're listening to D T F H N"
+    outro_prefix = "This has been your daily tech feed"
+    for prefix in (dtfhn_prefix, outro_prefix):
+        idx = text.find(prefix)
+        if idx > 0:
+            logger.warning("Stripped %d chars of preamble before '%s'", idx, prefix)
+            text = text[idx:]
+            break
+    
+    # If the prefix appears multiple times, keep only the last occurrence
     if text.count(dtfhn_prefix) > 1:
-        # Keep only the last occurrence and everything after it
         last_idx = text.rfind(dtfhn_prefix)
         text = text[last_idx:]
     
