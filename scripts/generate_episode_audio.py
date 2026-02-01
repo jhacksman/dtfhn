@@ -238,23 +238,28 @@ def parse_args():
 
 def split_into_paragraphs(text: str, min_words: int = 20) -> list[str]:
     """
-    Split text into paragraph-level chunks for TTS.
+    Split script text into TTS chunks using a fixed grouping pattern.
     
-    Splits on blank lines. Merges very short paragraphs into the previous
-    one to avoid garbled TTS on tiny fragments.
+    For 5-paragraph scripts (the standard):
+      - Chunk 0: paragraphs 1+2 together
+      - Chunk 1: paragraphs 3+4 together
+      - Chunk 2: paragraph 5 alone
+    
+    For other counts, pairs paragraphs and leaves the last one solo if odd.
+    Short paragraphs (< min_words) merge into previous chunk.
     
     Args:
         text: Full segment text
         min_words: Minimum words per chunk (shorter ones merge with previous)
     
     Returns:
-        List of paragraph strings, each suitable for a TTS job
+        List of text chunks, each suitable for a TTS job
     """
     raw_paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
     if len(raw_paragraphs) <= 1:
         return raw_paragraphs or [text.strip()]
     
-    # Merge short paragraphs into previous
+    # Merge very short paragraphs into previous first
     merged = [raw_paragraphs[0]]
     for p in raw_paragraphs[1:]:
         if len(p.split()) < min_words and merged:
@@ -262,7 +267,20 @@ def split_into_paragraphs(text: str, min_words: int = 20) -> list[str]:
         else:
             merged.append(p)
     
-    return merged
+    # Now pair: (1+2), (3+4), 5 solo — generalized for any count
+    chunks = []
+    i = 0
+    while i < len(merged):
+        if i + 1 < len(merged) and i + 2 <= len(merged) - 1:
+            # At least 2 remaining after this pair — combine pair
+            chunks.append(merged[i] + "\n\n" + merged[i + 1])
+            i += 2
+        else:
+            # Last one (or last two if only 2 remain) — solo
+            chunks.append(merged[i])
+            i += 1
+    
+    return chunks
 
 
 def load_segments(episode_dir: Path, episode_date: str) -> list[tuple[str, str, str]]:
