@@ -2,21 +2,23 @@
 """Generate missing WAVs for an episode.
 
 Reads the manifest to find which segments need WAV files,
-then generates them sequentially via the TTS server.
+then generates them in parallel via the TTS server (all 3 GPUs).
 
-Uses shared utilities from src/tts.py for text preparation
-and WAV validation to ensure consistency with the main pipeline.
+Uses shared utilities from src/tts.py for text preparation,
+WAV validation, and parallel dispatch.
 """
 import argparse
 import json
 import sys
-import time
-import requests
 from pathlib import Path
 
 # Allow imports from project root
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from src.tts import prepare_text_for_tts, validate_wav_bytes, TTS_URL
+from src.tts import (
+    prepare_text_for_tts,
+    text_to_speech_parallel_robust,
+    get_tts_voice,
+)
 
 
 def main():
@@ -61,48 +63,32 @@ def main():
         print("All WAVs exist! Nothing to do.")
         sys.exit(0)
 
-    for i, seg_name in enumerate(missing):
+    # Build segment list: (name, prepared_text)
+    segments = []
+    for seg_name in missing:
         txt_path = episode_dir / f"{seg_name}.txt"
-        wav_path = wav_dir / f"{seg_name}.wav"
-
         if not txt_path.exists():
-            print(f"[{i+1}/{len(missing)}] {seg_name} — SKIPPED (no .txt file)")
+            print(f"  SKIPPED {seg_name} — no .txt file")
             continue
-
         text = txt_path.read_text().strip()
-        prepared = prepare_text_for_tts(text)
         words = len(text.split())
+        print(f"  {seg_name}: {words} words")
+        segments.append((seg_name, text))
 
-        print(f"[{i+1}/{len(missing)}] {seg_name} ({words} words)...", end=" ", flush=True)
+    if not segments:
+        print("No segments to generate!")
+        sys.exit(1)
 
-        start = time.time()
-        try:
-            resp = requests.post(TTS_URL, json={
-                "text": prepared,
-                "voice": "george_carlin",
-                "timeout": 0,
-                "filename": f"{seg_name}.wav",
-            }, timeout=600)
+    voice = get_tts_voice()
+    print(f"\nGenerating {len(segments)} segments in parallel (voice: {voice})...\n")
 
-            job_id = resp.headers.get("X-Job-Id", "?")
-
-            if resp.status_code != 200:
-                print(f"FAILED (HTTP {resp.status_code}: {resp.text[:100]})")
-                continue
-
-            # Validate WAV content before writing
-            is_valid, error = validate_wav_bytes(resp.content)
-            if not is_valid:
-                print(f"INVALID WAV: {error} (job={job_id})")
-                continue
-
-            wav_path.write_bytes(resp.content)
-            elapsed = time.time() - start
-            size_kb = len(resp.content) / 1024
-            print(f"OK ({elapsed:.1f}s, {size_kb:.0f}KB, job={job_id})")
-
-        except Exception as e:
-            print(f"ERROR: {e}")
+    wav_files, failed = text_to_speech_parallel_robust(
+        segments,
+        wav_dir,
+        voice=voice,
+        skip_existing=True,
+        abort_on_queue=False,  # We're recovering — don't abort if queue has items
+    )
 
     # Final check
     final_existing = {p.stem for p in wav_dir.glob("*.wav")}
