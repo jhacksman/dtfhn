@@ -87,6 +87,41 @@ if [ "$TTS_OK" -ne 1 ]; then
     exit 1
 fi
 
+# Pre-flight: Voice check (george_carlin must be loaded)
+echo "[pre-flight] Checking voice availability..." | tee -a "$LOG"
+VOICES_RESP=$(curl -sf http://192.168.0.134:7849/voices 2>/dev/null) || VOICES_RESP=""
+if echo "$VOICES_RESP" | grep -q "george_carlin"; then
+    echo "  Voice george_carlin available" | tee -a "$LOG"
+else
+    echo "  WARNING: george_carlin not found in voices, triggering server restart..." | tee -a "$LOG"
+    curl -sf -X POST http://192.168.0.134:7849/restart > /dev/null 2>&1 || true
+
+    # Wait up to 120s for server to come back
+    RESTART_OK=0
+    for attempt in $(seq 1 24); do
+        sleep 5
+        if curl -sf http://192.168.0.134:7849/ > /dev/null 2>&1; then
+            RESTART_OK=1
+            break
+        fi
+        echo "  Waiting for TTS restart... ($((attempt * 5))s/120s)" | tee -a "$LOG"
+    done
+
+    if [ "$RESTART_OK" -ne 1 ]; then
+        notify "FAILURE" "Episode ${EPISODE_DATE}: TTS server did not come back after restart"
+        exit 1
+    fi
+
+    # Re-check voices after restart
+    VOICES_RESP=$(curl -sf http://192.168.0.134:7849/voices 2>/dev/null) || VOICES_RESP=""
+    if echo "$VOICES_RESP" | grep -q "george_carlin"; then
+        echo "  Voice george_carlin available after restart" | tee -a "$LOG"
+    else
+        notify "FAILURE" "Episode ${EPISODE_DATE}: george_carlin voice still missing after TTS restart"
+        exit 1
+    fi
+fi
+
 # Step 2: TTS
 echo "[2/5] Running TTS..." | tee -a "$LOG"
 python3 -u scripts/generate_episode_audio.py "${EPISODE_DATE}" --force 2>&1 | tee -a "$LOG"
