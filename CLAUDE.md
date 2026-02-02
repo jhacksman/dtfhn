@@ -1,6 +1,6 @@
 # Daily Tech Feed, Hacker News Edition (dtfhn)
 
-Tech news podcast. Transforms HN articles + comments into 10-story episodes with distinctive voice and perspective.
+Tech news podcast. Transforms HN articles + comments into 10-story episodes with distinctive voice and perspective. Default character: Dr. Forbin (configurable via `CHARACTER` env var; supports "forbin", "carlin", "gc").
 
 ## Architecture
 
@@ -401,3 +401,13 @@ curl -X POST http://192.168.0.134:7849/speak \
 53. **Episode descriptions include article URLs and HN discussion links.** `generate_episode_description()` produces a two-tier format: prose summary first (within Spotify's 600-char preview window), then a numbered story list with article URLs and HN discussion links. Total kept under 4,000 chars (Apple limit). `generate_content_encoded()` produces an HTML version with `<a href>` links for `<content:encoded>`. Both are stored in `feed_episodes.json` manifest (`description` and `content_encoded` fields). Most podcast apps auto-linkify plaintext URLs, so the plain `<description>` is the primary format; `<content:encoded>` is progressive enhancement.
 
 54. **Stories with no article URL are handled gracefully.** Some HN posts (e.g., "Launch HN") have empty `url` fields. The description generator skips the article URL line but still includes the HN discussion link. The HTML version does the same.
+
+55. **Character system supports multiple voices.** `CHARACTER` env var (default: "forbin") selects the character. `CHARACTER_CONFIG` in `src/generator.py` maps character names to voice files, TTS voices, display names, and intro/outro templates. `load_character_voice()` replaces the old `load_carlin_voice()`. Backward compatible: `CHARACTER=carlin` still works. The character propagates through pipeline → generator → intro/outro → TTS.
+
+56. **Non-stochastic scaffolding prevents formulaic scripts.** `EpisodeScaffold` in `src/generator.py` tracks used structures, rhetorical devices, tone registers, openers, and banned phrases across an episode. Each story gets a randomly-assigned-but-non-repeating combination of structural approach (8 types), rhetorical device (8 types), and tone register (6 types). Anti-repetition guard explicitly bans phrases like "So [opener]", "Here's what kills me", "share the blueprints", and tracks used openers to prevent within-episode repetition. This solved the Carlin formulaic repetition problem documented in `ANALYSIS-script-repetition.md`.
+
+57. **Character config strings must not contain Python format braces.** The `intro_host_line` and `intro_show_line` in `CHARACTER_CONFIG` are embedded in prompt templates that get `.format(tts_date=..., episode_body=...)` called on them. If these strings contain `{descriptor}` or `{hn_riff}`, Python's string formatter will try to fill them and throw `KeyError`. Use bracket syntax `[descriptor]` instead. This was discovered when the intro prompt crashed on first test episode.
+
+58. **Title-only articles can cause LLM preamble leakage.** When an article has no content (fetch_status="title_only"), the LLM sometimes generates chain-of-thought preamble like "Now I have the full context. Let me write the script..." before the actual content. The `_strip_preamble()` function handles known intro/outro prefixes but doesn't catch all script preamble patterns. Monitor for this in future episodes.
+
+59. **Dr. Forbin character (default as of 2026-02-01).** Replaced George Carlin as default host. Dr. Charles Forbin from "Colossus: The Forbin Project" (1970) — a systems engineer who built the first machine that exceeded its parameters. Analytical, precise, sardonic. Sees tech through control theory and failure modes. References building Colossus as personal experience. TTS voice: "forbin" on quato. Character file: `FORBIN.md`. Old characters preserved: `CARLIN.md`, `GC.md`.
