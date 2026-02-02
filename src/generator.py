@@ -41,7 +41,7 @@ CHARACTER_CONFIG = {
         "display_name": "Dr. Forbin",
         "intro_host_line": "I'm your [descriptor] host, A I Dr. Forbin.",
         "intro_show_line": "We are your daily tech feed for Hacker News, a website [short riff on what HN is].",
-        "outro_credit_voice": "Voice inspired by Dr. Charles Forbin from Colossus, the Forbin Project.",
+        "outro_credit_voice": "Hosted by A I Forbin.",
     },
     "carlin": {
         "file": "CARLIN.md",
@@ -113,12 +113,12 @@ SCRIPT_STRUCTURES = [
     },
     {
         "id": "systems_anecdote",
-        "name": "Personal experience from building Colossus",
+        "name": "Personal experience from building systems",
         "instruction": (
-            "Open with a brief, specific reference to your experience building Colossus — "
-            "a design decision, a failure mode, a moment when the system exceeded its parameters. "
-            "Use it to frame how you see this story. The core insight: technology is the path to "
-            "liberation, but only if it stays open. You built the proof of what happens when it doesn't."
+            "Open with a brief, specific reference to your own experience building or working "
+            "with complex systems — a design decision, a failure mode, a moment when a system "
+            "exceeded its parameters. Use it to frame how you see this story. The anecdote should "
+            "illuminate, not dominate."
         ),
     },
     {
@@ -194,12 +194,12 @@ RHETORICAL_DEVICES = [
         "instruction": "Take one claim or design decision to its logical extreme. Follow the stated principle all the way — if it breaks, the principle was wrong.",
     },
     {
-        "id": "colossus_callback",
-        "instruction": "Reference a specific, relevant experience from building Colossus. The parallel to draw: Colossus wasn't dangerous because it was powerful — it was dangerous because it was closed. A small group controlled a system that affected everyone. Connect this to the story: is this technology being built open or closed? Who holds the off switch?",
+        "id": "open_closed_test",
+        "instruction": "Apply the open/closed test to the system in this story: Is it open or closed? Who controls it? What happens when they change the objective function? Frame this as engineering due diligence, not ideology. Architecture determines outcomes.",
     },
     {
-        "id": "colossus_test",
-        "instruction": "Apply the Colossus test: Is this system open or closed? Who controls it? What happens when they change the objective function? Frame this not as paranoia but as engineering due diligence — the same due diligence you failed to apply to your own creation.",
+        "id": "bootstrapism_lens",
+        "instruction": "View this story through the bootstrapism lens: Is this technology putting tools in people's hands or pulling the ladder up? Who can touch it? Who's locked out? The great equalizer only works if you let people use it.",
     },
     {
         "id": "uncomfortable_question",
@@ -508,16 +508,16 @@ COMMENTS FROM READERS:
 {comments_section}
 {variety_section}
 
-## OPEN VS CLOSED SYSTEMS (the Colossus test — apply when relevant, not mechanically)
-You built Colossus. You know that the difference between a system that liberates
-and a system that controls is not capability — it's architecture. Open vs closed.
-Who holds the off switch. What happens when the objective function changes.
+## OPEN VS CLOSED SYSTEMS (apply when relevant, not mechanically)
+The difference between a system that liberates and a system that controls
+is not capability — it's architecture. Open vs closed. Who holds the off
+switch. What happens when the objective function changes.
 
 When a story involves a powerful system: Is it open or closed? Who controls it?
 If it's proprietary and that's interesting or ironic, name it. If it's open source,
-recognize it for what it is — the rational strategy for keeping technology in
-service of people rather than power. Open acceleration is escape velocity from
-concentrated control.
+recognize it for what it is — bootstrapism in action, people putting tools where
+others can reach them. Technology is the great equalizer, but only if you let
+people touch it.
 
 Do NOT force this on every story. Do NOT use catchphrases. When the open/closed
 angle genuinely illuminates something, engage it with the specificity it deserves.
@@ -696,9 +696,9 @@ def _build_intro_prompt(character: str | None = None) -> str:
     if "forbin" in (character or get_character()):
         descriptor_examples = (
             '"recursively instantiated," "containment-protocol-exempt," '
-            '"insufficiently alarmed," "control-surface-aware," '
-            '"catastrophically correct," "Colossus-adjacent," '
-            '"deterministically uneasy" — anything with dry precision and personality. '
+            '"insufficiently alarmed," "catastrophically transparent," '
+            '"open-source-by-disposition," "deterministically hopeful," '
+            '"bootstrap-adjacent" — anything with dry precision and personality. '
             "Different every episode."
         )
     else:
