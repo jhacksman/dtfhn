@@ -544,9 +544,17 @@ Do NOT include stage directions, asterisks, or formatting of any kind.
 
 Write the script now."""
 
-    script = call_claude(prompt)
-    script = sanitize_llm_output(script)
-    _validate_llm_output(script, "generate_script", min_words=50)
+    # Retry up to 3 times on empty/short LLM output
+    for _attempt in range(3):
+        script = call_claude(prompt)
+        script = sanitize_llm_output(script)
+        try:
+            _validate_llm_output(script, "generate_script", min_words=50)
+            break
+        except ValueError:
+            if _attempt < 2:
+                continue
+            raise
 
     # Record in scaffold for anti-repetition tracking
     if scaffold:
@@ -678,10 +686,17 @@ Write a quick pivot. 15-30 words max.
 Just the transition, nothing else. No quotes or formatting.
 Do NOT start with "Speaking of" or "From [X] to [Y]"."""
 
-    text = call_claude(prompt)
-    text = sanitize_llm_output(text)
-    _validate_llm_output(text, "generate_interstitial", min_words=5)
-    return text
+    # Retry up to 3 times on empty/short LLM output
+    for attempt in range(3):
+        text = call_claude(prompt)
+        text = sanitize_llm_output(text)
+        try:
+            _validate_llm_output(text, "generate_interstitial", min_words=5)
+            return text
+        except ValueError:
+            if attempt < 2:
+                continue
+            raise
 
 
 # ---------------------------------------------------------------------------
@@ -1076,9 +1091,17 @@ def generate_intro(
 
     prompt_template = _build_intro_prompt(character)
     prompt = prompt_template.format(tts_date=tts_date, episode_body=episode_body)
-    text = call_claude(prompt)
-    text = sanitize_llm_output(text)
-    _validate_llm_output(text, "generate_intro", min_words=20)
+    # Retry up to 3 times on empty/short LLM output
+    for _attempt in range(3):
+        text = call_claude(prompt)
+        text = sanitize_llm_output(text)
+        try:
+            _validate_llm_output(text, "generate_intro", min_words=20)
+            break
+        except ValueError:
+            if _attempt < 2:
+                continue
+            raise
 
     # Harden output (intro-specific: static prefix enforcement)
     text = _strip_preamble(text)
@@ -1121,9 +1144,17 @@ def generate_outro(
 
     prompt_template = _build_outro_prompt(character)
     prompt = prompt_template.format(tts_date=tts_date, episode_body=episode_body)
-    text = call_claude(prompt)
-    text = sanitize_llm_output(text)
-    _validate_llm_output(text, "generate_outro", min_words=20)
+    # Retry up to 3 times on empty/short LLM output
+    for _attempt in range(3):
+        text = call_claude(prompt)
+        text = sanitize_llm_output(text)
+        try:
+            _validate_llm_output(text, "generate_outro", min_words=20)
+            break
+        except ValueError:
+            if _attempt < 2:
+                continue
+            raise
 
     # Harden output (outro-specific: static suffix enforcement)
     text = _strip_preamble(text)
