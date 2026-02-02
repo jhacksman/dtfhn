@@ -150,13 +150,12 @@ else
     echo "  WARNING: Episode returned HTTP ${HTTP_CODE} (may need CDN propagation time)" | tee -a "$LOG"
 fi
 
-# Step 4: Trigger Cloudflare Pages rebuild
+# Step 4: Trigger Cloudflare Pages rebuild (git push to dailytechfeedsite)
 echo "[4/5] Triggering website rebuild..." | tee -a "$LOG"
-if [ -n "${CF_PAGES_DEPLOY_HOOK_URL:-}" ]; then
-    DEPLOY_RESPONSE=$(curl -s -X POST "${CF_PAGES_DEPLOY_HOOK_URL}" 2>&1) || true
-    echo "  Deploy hook response: ${DEPLOY_RESPONSE}" | tee -a "$LOG"
+if (cd ~/clawd/dailytechfeedsite && git commit --allow-empty -m "deploy: ${EPISODE_DATE}" && git push) 2>&1 | tee -a "$LOG"; then
+    echo "  Website rebuild triggered" | tee -a "$LOG"
 else
-    echo "  SKIPPED: CF_PAGES_DEPLOY_HOOK_URL not set in .env" | tee -a "$LOG"
+    echo "  WARNING: Website rebuild failed (git push), continuing..." | tee -a "$LOG"
 fi
 
 # Step 5: Telegram delivery notification (non-fatal)
