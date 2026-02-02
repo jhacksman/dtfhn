@@ -1,0 +1,19 @@
+Now I have the full context. Let me write the script as Dr. Forbin covering Gul Agha's 1985 Actor model dissertation.
+
+---
+
+Nineteen eighty-five. Gul Agha publishes a doctoral thesis at MIT that formally defines a model of concurrent computation in distributed systems. Not a product. Not a startup. A mathematical framework. And forty years later, we're still arguing about whether anyone should actually use it.
+
+Let me make the case against it. The Actor model is seductive in the way that pure mathematical abstractions always are. Every entity is an actor. Every interaction is a message. No shared state, no locks, no race conditions. On a whiteboard, it's pristine. In a doctoral thesis, it's elegant. In production, at three AM, when you're trying to trace why actor number forty-seven thousand stopped processing messages and the entire system is backed up because nobody designed for that particular failure mode — it's something else entirely.
+
+One commenter captures this perfectly. They were brought in specifically to help migrate away from an actor-based system. The seduction wore off. The consultants arrived.
+
+And yet.
+
+Look at what survived. Erlang's OTP, which runs most of the world's telephone switching infrastructure and has for decades. Microsoft Orleans. The Pony language, which took Agha's model and asked, what if we designed a type system that makes data races a compile-time error? That's not retreading old ground. That's extending the formal model with capabilities Agha couldn't have anticipated in nineteen eighty-five because the type theory didn't exist yet.
+
+What Agha actually did — and this is what makes the thesis worth reading, not skimming, reading — is define the operational semantics of concurrent computation in a way that's composable. Each actor encapsulates its own state. Communication is asynchronous. The model handles distribution as a first-class concern, not an afterthought bolted onto a sequential paradigm.
+
+That last part matters. Most concurrency models start with sequential computation and try to add parallelism. Agha started with parallelism and showed how sequential behavior emerges as a special case. The inversion is fundamental. It's the difference between adding wheels to a boat and designing something that moves on both water and land from the beginning.
+
+The thesis is a PDF from DTIC, the Defense Technical Information Center. Public research, publicly funded, publicly available. Forty years later, every major cloud platform's distributed computing framework owes a debt to this work. The math is free. The implementations built on it generate billions in revenue. That's the compounding effect of published knowledge — the return extends far beyond any single investor's timeline.

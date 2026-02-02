@@ -1,0 +1,1 @@
+We've been circling the same design pattern all morning — systems that keep their promises. Nix formalized that into actual contracts.

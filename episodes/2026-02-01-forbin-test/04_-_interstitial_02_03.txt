@@ -1,0 +1,1 @@
+From systems that can't isolate their failure modes to someone who built an entire agent runtime in five hundred lines of TypeScript — with Apple's container sandbox doing the isolation right.
