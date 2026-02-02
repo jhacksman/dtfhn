@@ -1,8 +1,9 @@
-"""TTS module for Carlin podcast.
+"""TTS module for DTFHN podcast.
 
-Interfaces with quato TTS server (F5-TTS with George Carlin voice).
-Server has 3 GPUs that process requests in parallel.
+Interfaces with quato TTS server. Server has 3 GPUs that process
+requests in parallel. Voice selection is driven by CHARACTER env var.
 """
+import os
 import time
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -11,8 +12,24 @@ from pathlib import Path
 # TTS server config (quato)
 TTS_URL = "http://192.168.0.134:7849/speak"
 TTS_STATUS_URL = "http://192.168.0.134:7849/status"
-TTS_VOICE = "george_carlin"
 TTS_TIMEOUT = 3600  # 1 hour — connections wait in server queue until processed
+
+# Character → TTS voice mapping
+CHARACTER_TTS_VOICES = {
+    "forbin": "forbin",
+    "carlin": "george_carlin",
+    "gc": "george_carlin",
+}
+
+
+def get_tts_voice() -> str:
+    """Get TTS voice name based on CHARACTER env var."""
+    char = os.environ.get("CHARACTER", "forbin").lower()
+    return CHARACTER_TTS_VOICES.get(char, "forbin")
+
+
+# Default voice (evaluated at import time, but functions use get_tts_voice() for dynamic lookup)
+TTS_VOICE = get_tts_voice()
 
 # Robust TTS pipeline configuration
 POLL_INTERVAL_SECONDS = 5  # How often to poll /status
