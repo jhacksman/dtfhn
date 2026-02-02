@@ -151,7 +151,7 @@ def text_to_speech(text: str, output_path: Path, voice: str = TTS_VOICE) -> tupl
             TTS_URL,
             headers={"Content-Type": "application/json"},
             json={"text": prepared_text, "voice": voice, "timeout": 0},
-            timeout=TTS_TIMEOUT,
+            timeout=(10, TTS_TIMEOUT),  # 10s connect, TTS_TIMEOUT read — detect dead server fast
         )
         
         # Track job ID from response header
