@@ -24,6 +24,8 @@ from .generator import (
     generate_outro,
     format_date_for_tts,
     count_words,
+    get_character,
+    get_character_config,
 )
 from .transcript import generate_vtt, generate_plain_transcript
 from .chapters import generate_chapters_json, embed_chapters, load_stories_for_episode
@@ -304,9 +306,13 @@ def run_episode_pipeline(
 
     episode_dir = get_episode_dir(episode_date)
 
+    character = get_character()
+    char_config = get_character_config(character)
+
     if verbose:
         print("=" * 70)
-        print(f"CARLIN PODCAST - EPISODE {episode_date}")
+        print(f"DTFHN PODCAST ({char_config['display_name']}) - EPISODE {episode_date}")
+        print(f"Character: {character} | Voice: {char_config['tts_voice']}")
         print("=" * 70)
 
     # Step 1: Fetch stories (or load from DB)
@@ -398,7 +404,7 @@ def run_episode_pipeline(
     if verbose:
         print("\n[3/7] GENERATING SCRIPTS...")
 
-    scripts_with_counts = generate_episode_scripts(articles, word_target)
+    scripts_with_counts = generate_episode_scripts(articles, word_target, character=character)
 
     # Save individual scripts and store in DB
     for i, (script, word_count) in enumerate(scripts_with_counts):
@@ -430,7 +436,7 @@ def run_episode_pipeline(
         # Get next article title
         next_title = articles[i + 1].get("title", "next topic") if i + 1 < len(articles) else "next topic"
 
-        trans = generate_interstitial(scripts[i], scripts[i + 1], next_title)
+        trans = generate_interstitial(scripts[i], scripts[i + 1], next_title, character=character)
         interstitials.append(trans)
 
         # Save individual interstitial
@@ -459,13 +465,13 @@ def run_episode_pipeline(
         # For test episodes like "test-20260127-200820"
         tts_date = episode_date
 
-    intro = generate_intro(scripts, interstitials, tts_date)
+    intro = generate_intro(scripts, interstitials, tts_date, character=character)
     intro_path = episode_dir / f"{segment_name('intro')}.txt"
     intro_path.write_text(intro)
     if verbose:
         print(f"  Intro: {count_words(intro)} words → {intro_path.name}")
 
-    outro = generate_outro(scripts, interstitials, intro, tts_date)
+    outro = generate_outro(scripts, interstitials, intro, tts_date, character=character)
     outro_path = episode_dir / f"{segment_name('outro')}.txt"
     outro_path.write_text(outro)
     if verbose:
