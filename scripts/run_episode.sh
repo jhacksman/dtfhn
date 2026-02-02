@@ -50,10 +50,14 @@ on_error() {
 trap 'on_error' ERR
 trap 'rm -f "$LOCKFILE"' EXIT
 
+# Character selection (default: forbin)
+export CHARACTER="${CHARACTER:-forbin}"
+
 EPISODE_DATE="${1:-$(date +%Y-%m-%d-%H%M)}"
 LOG="/tmp/dtfhn-${EPISODE_DATE}.log"
 
 echo "=== DTFHN Episode: ${EPISODE_DATE} ===" | tee "$LOG"
+echo "Character: ${CHARACTER}" | tee -a "$LOG"
 echo "Started: $(date)" | tee -a "$LOG"
 
 # Step 1: Text pipeline (fetch, scripts, interstitials, intro/outro, metadata)
