@@ -34,6 +34,24 @@ WORDS_PER_STORY = 400  # ~400 words per story for 10 stories
 # ---------------------------------------------------------------------------
 
 # Map character names to their voice files and TTS voices
+VOICE_CREDITS = {
+    "forbin": "Voice inspired by Dr. Charles Forbin from the nineteen seventy science fiction film Colossus: The Forbin Project.",
+    "george_carlin": "Voice inspired by the legendary comedian George Carlin.",
+    "scarjo": "Voice inspired by the actress Scarlett Johansson.",
+    "noel": "Voice inspired by the comedian and artist Noel Fielding.",
+    "stephen_fry": "Voice inspired by the actor and author Stephen Fry.",
+    "philip_fry": "Voice inspired by Philip J. Fry from the animated series Futurama.",
+    "lynch": "Voice inspired by the filmmaker David Lynch.",
+}
+
+DEFAULT_VOICE_CREDIT = "A I generated voice."
+
+
+def get_voice_credit(tts_voice: str) -> str:
+    """Look up the voice credit line for a TTS voice name."""
+    return VOICE_CREDITS.get(tts_voice, DEFAULT_VOICE_CREDIT)
+
+
 CHARACTER_CONFIG = {
     "forbin": {
         "file": "FORBIN.md",
@@ -41,7 +59,6 @@ CHARACTER_CONFIG = {
         "display_name": "Jack Hacksman",
         "intro_host_line": "I'm your [descriptor] host, Jack Hacksman.",
         "intro_show_line": "We are your daily tech feed for Hacker News, a website [short riff on what HN is].",
-        "outro_credit_voice": "Hosted by Jack Hacksman. Voice inspired by Dr. Charles Forbin from the nineteen seventy science fiction film Colossus: The Forbin Project.",
     },
     "carlin": {
         "file": "CARLIN.md",
@@ -49,7 +66,6 @@ CHARACTER_CONFIG = {
         "display_name": "A I George Carlin",
         "intro_host_line": "I'm your [descriptor] host, A I George Carlin.",
         "intro_show_line": "We are your daily tech feed for Hacker News, a website [short riff on what HN is].",
-        "outro_credit_voice": "Voice inspired by George Carlin.",
     },
     "gc": {
         "file": "GC.md",
@@ -57,7 +73,6 @@ CHARACTER_CONFIG = {
         "display_name": "A I George Carlin",
         "intro_host_line": "I'm your [descriptor] host, A I George Carlin.",
         "intro_show_line": "We are your daily tech feed for Hacker News, a website [short riff on what HN is].",
-        "outro_credit_voice": "Voice inspired by George Carlin.",
     },
 }
 
@@ -707,7 +722,6 @@ def _build_intro_prompt(character: str | None = None) -> str:
     """Build the intro prompt template for the active character."""
     config = get_character_config(character)
     display = config["display_name"]
-    voice_credit = config["outro_credit_voice"]
 
     # Character-specific descriptor examples
     if "forbin" in (character or get_character()):
@@ -763,7 +777,7 @@ def _build_outro_prompt(character: str | None = None) -> str:
     """Build the outro prompt template for the active character."""
     config = get_character_config(character)
     display = config["display_name"]
-    voice_credit = config["outro_credit_voice"]
+    voice_credit = get_voice_credit(config["tts_voice"])
 
     return (
         "You are writing the OUTRO for today's episode in the voice of {display_name}.\n"
