@@ -33,7 +33,7 @@ for line in _lines:
     if _in_section:
         _section_code.append(line)
         # Stop after the function ends (next top-level definition or end of file)
-        if _section_code and line.startswith("def ") and "sanitize_llm_output" not in line:
+        if _section_code and line.startswith("def ") and "sanitize_llm_output" not in line and "_detect_prompt_leakage" not in line:
             _section_code.pop()  # remove the next function def
             break
 
@@ -332,3 +332,60 @@ class TestCombined:
         assert "Sure, here" not in result
         assert "Let me know" not in result
         assert result.endswith("dependency graph.")
+
+
+# ---------------------------------------------------------------------------
+# Extended leakage detection patterns (added 2026-02-03)
+# ---------------------------------------------------------------------------
+
+class TestExtendedLeakagePatterns:
+    def test_i_think(self):
+        text = "I think I should approach this analytically.\n\nThe kernel patch landed quietly."
+        result = sanitize_llm_output(text)
+        assert result.startswith("The kernel patch landed quietly.")
+
+    def test_i_need_to(self):
+        text = "I need to focus on the technical details here.\n\nFour years of development."
+        result = sanitize_llm_output(text)
+        assert result.startswith("Four years of development.")
+
+    def test_step_marker(self):
+        text = "Step 1: Set the scene.\n\nThe server room was silent."
+        result = sanitize_llm_output(text)
+        assert result.startswith("The server room was silent.")
+
+    def test_my_approach(self):
+        text = "My approach: dry systems analysis with a pivot to open source.\n\nThe architecture tells a story."
+        result = sanitize_llm_output(text)
+        assert result.startswith("The architecture tells a story.")
+
+    def test_for_this_episode(self):
+        text = "For this episode I'll take a measured tone.\n\nThere's a reason nobody talks about routing tables."
+        result = sanitize_llm_output(text)
+        assert result.startswith("There's a reason nobody talks about routing tables.")
+
+    def test_the_script_should(self):
+        text = "The script should feel analytical.\n\nDistributed consensus is a solved problem."
+        result = sanitize_llm_output(text)
+        assert result.startswith("Distributed consensus is a solved problem.")
+
+    def test_i_want_to_make_sure(self):
+        text = "I want to make sure this hits the right tone.\n\nThe commit log tells you everything."
+        result = sanitize_llm_output(text)
+        assert result.startswith("The commit log tells you everything.")
+
+    def test_trailing_meta_about_script(self):
+        text = "The architecture diagram is the product.\n\nThis script is 347 words."
+        result = sanitize_llm_output(text)
+        assert "347 words" not in result
+        assert result.rstrip().endswith("The architecture diagram is the product.")
+
+    def test_trailing_ive_kept(self):
+        text = "The open protocol won. That's the story.\n\nI've kept this under the word limit."
+        result = sanitize_llm_output(text)
+        assert "word limit" not in result
+
+    def test_first_i_planning(self):
+        text = "First, I need to establish context.\n\nTwo thousand twenty-three."
+        result = sanitize_llm_output(text)
+        assert result.startswith("Two thousand twenty-three.")

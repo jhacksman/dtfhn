@@ -38,10 +38,10 @@ CHARACTER_CONFIG = {
     "forbin": {
         "file": "FORBIN.md",
         "tts_voice": "forbin",
-        "display_name": "Dr. Forbin",
-        "intro_host_line": "I'm your [descriptor] host, A I Dr. Forbin.",
+        "display_name": "Jack Hacksman",
+        "intro_host_line": "I'm your [descriptor] host, Jack Hacksman.",
         "intro_show_line": "We are your daily tech feed for Hacker News, a website [short riff on what HN is].",
-        "outro_credit_voice": "Hosted by A I Forbin.",
+        "outro_credit_voice": "Hosted by Jack Hacksman. Voice inspired by Dr. Charles Forbin from the nineteen seventy science fiction film Colossus: The Forbin Project.",
     },
     "carlin": {
         "file": "CARLIN.md",
@@ -896,6 +896,8 @@ _PREAMBLE_LINE_PATTERNS = [
     re.compile(r"^now\s+I\s+(have|need|can|will|should|'ll|let)", re.IGNORECASE),
     re.compile(r"^let\s+me\s+(write|create|craft|compose|draft|generate|think|start|begin|do)", re.IGNORECASE),
     re.compile(r"^I('ll| will| need to| should| can)\s+(write|create|craft|compose|draft|generate|start)", re.IGNORECASE),
+    re.compile(r"^I\s+think\s+(I|we|this|the|it)", re.IGNORECASE),
+    re.compile(r"^I\s+need\s+to\s+", re.IGNORECASE),
     # "Here's the X" / "Here is the X"
     re.compile(r"^here'?s?\s+(the|your|an?|my)\s+", re.IGNORECASE),
     re.compile(r"^here\s+is\s+(the|your|an?|my)\s+", re.IGNORECASE),
@@ -906,6 +908,14 @@ _PREAMBLE_LINE_PATTERNS = [
     re.compile(r"^(this|the)\s+(script|segment|intro|outro|transition|piece)\s+(is|should|will|covers)", re.IGNORECASE),
     re.compile(r"^\d+\s+words?\s*[—–\-:]", re.IGNORECASE),  # Word count notes
     re.compile(r"^word\s+count\s*[:\-—]", re.IGNORECASE),
+    # Reasoning/planning markers
+    re.compile(r"^step\s+\d+\s*[:\-—]", re.IGNORECASE),
+    re.compile(r"^first[,]\s+(I|let|we)", re.IGNORECASE),
+    re.compile(r"^my\s+(approach|plan|strategy|goal|thinking)\s*[:\-—]", re.IGNORECASE),
+    # Meta-commentary about episode/script content
+    re.compile(r"^(the|this)\s+script\s+should\b", re.IGNORECASE),
+    re.compile(r"^I\s+want\s+to\s+make\s+sure\b", re.IGNORECASE),
+    re.compile(r"^for\s+this\s+episode\b", re.IGNORECASE),
     # Empty or whitespace-only lines (strip from top)
     re.compile(r"^$"),
 ]
@@ -921,7 +931,52 @@ _TRAILING_LINE_PATTERNS = [
     re.compile(r"^word\s+count\s*[:\-—]\s*\d+", re.IGNORECASE),
     re.compile(r"^---+\s*$"),  # Trailing separators
     re.compile(r"^$"),  # Trailing blank lines
+    # Trailing meta-commentary about the script itself
+    re.compile(r"^(this|the)\s+(script|segment|intro|outro)\s+(is|was|comes\s+in\s+at)", re.IGNORECASE),
+    re.compile(r"^I('ve| have)\s+(kept|stayed|aimed|tried)", re.IGNORECASE),
 ]
+
+
+def _detect_prompt_leakage(text: str) -> None:
+    """Detect and log warnings for LLM chain-of-thought leakage in output.
+    
+    This is a diagnostic function — it doesn't modify the text, just warns.
+    The actual stripping is handled by sanitize_llm_output phases.
+    """
+    leakage_patterns = [
+        (r"^Let me\b", "chain-of-thought: 'Let me...'"),
+        (r"^I'll\b", "chain-of-thought: 'I'll...'"),
+        (r"^I need to\b", "chain-of-thought: 'I need to...'"),
+        (r"^I think\b", "chain-of-thought: 'I think...'"),
+        (r"^Here's my\b", "chain-of-thought: 'Here's my...'"),
+        (r"^Okay,\s", "compliance: 'Okay,...'"),
+        (r"^Sure,\s", "compliance: 'Sure,...'"),
+        (r"^Step\s+\d+:", "reasoning marker: 'Step N:'"),
+        (r"^First,\s+I\b", "reasoning marker: 'First, I...'"),
+        (r"^My approach:", "reasoning marker: 'My approach:'"),
+        (r"the script should\b", "meta-commentary: 'the script should...'"),
+        (r"I want to make sure\b", "meta-commentary: 'I want to make sure...'"),
+        (r"^for this episode\b", "meta-commentary: 'for this episode...'"),
+        (r"^Now I have\b", "chain-of-thought: 'Now I have...'"),
+    ]
+    
+    detected = []
+    for line in text.splitlines()[:20]:  # Only check first 20 lines
+        stripped = line.strip()
+        if not stripped:
+            continue
+        for pattern, label in leakage_patterns:
+            if re.search(pattern, stripped, re.IGNORECASE):
+                detected.append((label, stripped[:80]))
+                break  # One match per line is enough
+    
+    if detected:
+        logger.warning(
+            "PROMPT LEAKAGE DETECTED (%d pattern(s) matched). "
+            "Sanitizer will auto-strip. Matches: %s",
+            len(detected),
+            "; ".join(f"[{label}] '{preview}'" for label, preview in detected),
+        )
 
 
 def sanitize_llm_output(text: str) -> str:
@@ -944,6 +999,10 @@ def sanitize_llm_output(text: str) -> str:
         return text.strip() if text else text
 
     text = text.strip()
+    original_text = text  # Keep original for leakage detection logging
+
+    # --- Phase 0: Detect and warn about prompt leakage ---
+    _detect_prompt_leakage(text)
 
     # --- Phase 1: Handle "---" separator as preamble boundary ---
     # If the text has a "---" line within the first ~15 lines, everything
