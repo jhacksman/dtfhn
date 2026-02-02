@@ -37,7 +37,11 @@ from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.tts import text_to_speech_parallel_robust, check_tts_status, TTS_STATUS_URL
-from src.audio import stitch_wavs, transcode_to_mp3, get_audio_duration, cleanup_wav_files, generate_silence_wav
+from src.audio import (
+    stitch_wavs, transcode_to_mp3, get_audio_duration, cleanup_wav_files,
+    generate_silence_wav, transcode_segment_to_mp3, validate_segment_mp3,
+    stitch_mp3s_variable,
+)
 from src.storage import store_episode, store_segments_batch
 from src.chapters import embed_chapters, generate_chapters_json, load_stories_for_episode
 from src.metadata import embed_id3_metadata
@@ -236,6 +240,35 @@ def parse_args():
     return parser.parse_args()
 
 
+def find_existing_segment_mp3s(
+    segments: list[tuple[str, str, str]],
+    segments_dir: Path,
+) -> tuple[list[str], list[tuple[str, str, str]]]:
+    """
+    Check segments/ dir for existing valid MP3s to determine what still needs rendering.
+    
+    Args:
+        segments: List of (segment_name, text, parent_segment_name) tuples
+        segments_dir: Path to segments/ directory
+    
+    Returns:
+        (existing_names, missing_segments)
+        - existing_names: segment names that already have valid MP3s
+        - missing_segments: segments that still need TTS + transcode
+    """
+    existing = []
+    missing = []
+    
+    for name, text, parent in segments:
+        mp3_path = segments_dir / f"{name}.mp3"
+        if validate_segment_mp3(mp3_path):
+            existing.append(name)
+        else:
+            missing.append((name, text, parent))
+    
+    return existing, missing
+
+
 def split_into_paragraphs(text: str, min_words: int = 20) -> list[str]:
     """
     Split script text into TTS chunks using a fixed grouping pattern.
@@ -336,14 +369,14 @@ def load_segments(episode_dir: Path, episode_date: str) -> list[tuple[str, str, 
 def build_segment_metadata(
     episode_date: str,
     segments: list[tuple[str, str]],
-    wav_files: list[Path]
+    audio_files: list[Path]
 ) -> list[dict]:
-    """Build segment metadata with durations from WAV files."""
-    # Get durations for each WAV
+    """Build segment metadata with durations from audio files (WAV or MP3)."""
+    # Get durations for each audio file
     durations = {}
-    for wav in wav_files:
-        name = wav.stem
-        durations[name] = get_audio_duration(wav)
+    for af in audio_files:
+        name = af.stem
+        durations[name] = get_audio_duration(af)
     
     # Build metadata
     metadata = []
@@ -468,7 +501,7 @@ def stitch_wavs_variable(
 def build_segment_metadata_from_subs(
     episode_date: str,
     segments_with_parent: list[tuple[str, str, str]],
-    wav_files: list[Path],
+    audio_files: list[Path],
     silence_map: list[float],
 ) -> list[dict]:
     """
@@ -476,11 +509,13 @@ def build_segment_metadata_from_subs(
     
     Chapters/metadata use parent segment names. Sub-segment durations are summed
     (plus inter-paragraph silence) to get the parent segment's total duration.
+    
+    Works with both WAV and MP3 files (uses ffprobe for duration).
     """
-    # Get duration for each WAV
+    # Get duration for each audio file
     durations = {}
-    for wav in wav_files:
-        durations[wav.stem] = get_audio_duration(wav)
+    for af in audio_files:
+        durations[af.stem] = get_audio_duration(af)
     
     # Group sub-segments by parent, preserving order
     from collections import OrderedDict
@@ -646,15 +681,10 @@ def main():
                 sys.exit(1)
         print()
         
-        # PRE-FLIGHT: Check for existing WAV files
+        # Set up directories
         wav_dir = episode_dir / "wav_temp"
-        if wav_dir.exists():
-            existing_wavs = list(wav_dir.glob("*.wav"))
-            if existing_wavs:
-                print(f"Found {len(existing_wavs)} existing WAV files in {wav_dir}")
-                print("These may be from a previous incomplete run.")
-                print("The robust TTS function will skip valid existing files.")
-                print()
+        segments_dir = episode_dir / "segments"
+        segments_dir.mkdir(exist_ok=True)
         
         # Load all segments (scripts split into paragraph sub-segments)
         print("Loading segments...")
@@ -666,40 +696,97 @@ def main():
             print(f"  {name}: {words} words{suffix}")
         print()
         
-        # Extract (name, text) pairs for TTS pipeline
-        segments = [(name, text) for name, text, _ in segments_with_parent]
-        
-        # Create temp directory for WAVs
-        wav_dir.mkdir(exist_ok=True)
-        
-        # Generate all TTS with robust pipeline
-        print("Generating TTS (parallel to 3 GPUs with retry support)...")
-        start_time = datetime.now()
-        wav_files, failed = text_to_speech_parallel_robust(
-            segments,
-            wav_dir,
-            skip_existing=True,
-            abort_on_queue=False,  # Already checked manually above
+        # PRE-FLIGHT: Check for existing segment MP3s (the archival format)
+        existing_mp3_names, missing_segments = find_existing_segment_mp3s(
+            segments_with_parent, segments_dir
         )
-        tts_time = (datetime.now() - start_time).total_seconds()
-        print(f"TTS completed in {tts_time:.1f}s ({len(wav_files)} files)")
-        print()
-        
-        if failed:
-            print(f"ERROR: {len(failed)} segments failed after all retries:")
-            for name in failed:
-                print(f"  - {name}")
+        if existing_mp3_names:
+            print(f"Found {len(existing_mp3_names)} existing valid segment MP3s in {segments_dir}")
+            print(f"  Skipping: {existing_mp3_names[:5]}{'...' if len(existing_mp3_names) > 5 else ''}")
             print()
-            print("Fix the issue and re-run. Existing WAVs will be reused.")
-            sys.exit(1)
         
-        if len(wav_files) != len(segments):
-            print(f"WARNING: Only {len(wav_files)}/{len(segments)} segments generated!")
+        if not missing_segments:
+            print("All segments already have valid MP3s! Skipping TTS generation.")
+            print()
+        else:
+            # Also check for leftover WAV files from incomplete runs
+            if wav_dir.exists():
+                existing_wavs = list(wav_dir.glob("*.wav"))
+                if existing_wavs:
+                    print(f"Found {len(existing_wavs)} leftover WAV files in {wav_dir}")
+                    print("The robust TTS function will skip valid existing WAVs.")
+                    print()
+            
+            # Extract (name, text) pairs for TTS pipeline — only missing segments
+            segments_to_generate = [(name, text) for name, text, _ in missing_segments]
+            
+            # Create temp directory for WAVs
+            wav_dir.mkdir(exist_ok=True)
+            
+            # Generate TTS for missing segments
+            print(f"Generating TTS for {len(segments_to_generate)} segments (parallel to 3 GPUs)...")
+            start_time = datetime.now()
+            wav_files, failed = text_to_speech_parallel_robust(
+                segments_to_generate,
+                wav_dir,
+                skip_existing=True,
+                abort_on_queue=False,  # Already checked manually above
+            )
+            tts_time = (datetime.now() - start_time).total_seconds()
+            print(f"TTS completed in {tts_time:.1f}s ({len(wav_files)} files)")
+            print()
+            
+            if failed:
+                print(f"ERROR: {len(failed)} segments failed after all retries:")
+                for name in failed:
+                    print(f"  - {name}")
+                print()
+                print("Fix the issue and re-run. Existing segment MP3s will be reused.")
+                sys.exit(1)
+            
+            if len(wav_files) != len(segments_to_generate):
+                print(f"WARNING: Only {len(wav_files)}/{len(segments_to_generate)} segments generated!")
+            
+            # Transcode each WAV → segment MP3, validate, then delete WAV
+            print("Transcoding WAVs to segment MP3s (192k CBR)...")
+            for wav_path in wav_files:
+                seg_name = wav_path.stem
+                mp3_path = segments_dir / f"{seg_name}.mp3"
+                
+                if not transcode_segment_to_mp3(wav_path, mp3_path, bitrate="192k"):
+                    print(f"ERROR: Failed to transcode {seg_name} to MP3")
+                    sys.exit(1)
+                
+                # WAV is safe to delete — MP3 is validated
+                wav_path.unlink()
+                print(f"  ✓ {seg_name}.mp3 ({mp3_path.stat().st_size / 1024:.0f} KB)")
+            
+            print(f"All segment MP3s saved to {segments_dir}")
+            print()
+            
+            # Clean up wav_temp/ (should be empty now)
+            if wav_dir.exists():
+                remaining = list(wav_dir.glob("*"))
+                if remaining:
+                    print(f"WARNING: {len(remaining)} files remain in wav_temp/")
+                else:
+                    wav_dir.rmdir()
+                    print("Removed empty wav_temp/")
+            print()
         
-        # Stitch WAVs with variable silence:
+        # Build ordered list of all segment MP3 paths
+        segment_mp3_files = []
+        for name, text, parent in segments_with_parent:
+            mp3_path = segments_dir / f"{name}.mp3"
+            if not mp3_path.exists():
+                print(f"ERROR: Missing segment MP3: {mp3_path}")
+                sys.exit(1)
+            segment_mp3_files.append(mp3_path)
+        
+        # Stitch segment MP3s with variable silence:
         #   0.5s between paragraph sub-segments (within a script)
         #   1.0s between major segments (intro→script, script→interstitial, etc.)
-        print("Stitching WAVs with variable silence gaps...")
+        print("Stitching segment MP3s with variable silence gaps...")
         silence_map = []  # silence duration AFTER each segment (except last)
         for i in range(len(segments_with_parent) - 1):
             _, _, parent_curr = segments_with_parent[i]
@@ -709,21 +796,12 @@ def main():
             else:
                 silence_map.append(1.0)  # Different parent = major break
         
-        episode_wav = episode_dir / "episode.wav"
-        if not stitch_wavs_variable(wav_files, episode_wav, silence_map):
-            print("ERROR: Failed to stitch WAVs")
-            sys.exit(1)
-        print(f"Stitched: {episode_wav} ({episode_wav.stat().st_size / 1024 / 1024:.1f} MB)")
-        print()
-        
-        # Transcode to MP3
-        print("Transcoding to MP3 (128k mono)...")
         episode_mp3 = episode_dir / f"DTFHN-{episode_date}.mp3"
-        if not transcode_to_mp3(episode_wav, episode_mp3):
-            print("ERROR: Failed to transcode to MP3")
+        if not stitch_mp3s_variable(segment_mp3_files, episode_mp3, silence_map, bitrate="192k"):
+            print("ERROR: Failed to stitch segment MP3s")
             sys.exit(1)
         mp3_size = episode_mp3.stat().st_size
-        print(f"MP3: {episode_mp3} ({mp3_size / 1024 / 1024:.1f} MB)")
+        print(f"Episode MP3: {episode_mp3} ({mp3_size / 1024 / 1024:.1f} MB)")
         print()
         
         # Get final duration
@@ -733,7 +811,9 @@ def main():
         
         # Build segment metadata (coalesce sub-segments back to parent level for chapters)
         print("Building segment metadata...")
-        segment_metadata = build_segment_metadata_from_subs(episode_date, segments_with_parent, wav_files, silence_map)
+        segment_metadata = build_segment_metadata_from_subs(
+            episode_date, segments_with_parent, segment_mp3_files, silence_map
+        )
         
         # Store in LanceDB
         print("Storing episode in LanceDB...")
@@ -777,26 +857,17 @@ def main():
         )
         print()
         
-        print()
-        
-        # Cleanup temp WAVs
-        print("Cleaning up temp WAV files...")
-        deleted = cleanup_wav_files(wav_files)
-        episode_wav.unlink(missing_ok=True)
-        print(f"Deleted {deleted + 1} temp files")
-        try:
-            wav_dir.rmdir()
-        except OSError:
-            pass  # Directory may not be empty if there were failures
-        print()
-        
         # Summary
         print("=" * 50)
         print(f"Episode {episode_date} complete!")
         print(f"  Duration: {duration:.1f}s ({duration / 60:.1f} min)")
         print(f"  MP3 size: {mp3_size / 1024 / 1024:.1f} MB")
         print(f"  Segments: {len(segment_metadata)}")
-        print(f"  TTS time: {tts_time:.1f}s")
+        print(f"  Segment MP3s: {segments_dir}")
+        try:
+            print(f"  TTS time: {tts_time:.1f}s")
+        except NameError:
+            pass
         print("=" * 50)
     
     finally:

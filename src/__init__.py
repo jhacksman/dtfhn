@@ -11,6 +11,10 @@ from .tts import (
 from .audio import (
     stitch_wavs,
     transcode_to_mp3,
+    transcode_segment_to_mp3,
+    validate_segment_mp3,
+    generate_silence_mp3,
+    stitch_mp3s_variable,
     get_audio_duration,
     cleanup_wav_files,
 )
@@ -70,6 +74,10 @@ __all__ = [
     # Audio
     "stitch_wavs",
     "transcode_to_mp3",
+    "transcode_segment_to_mp3",
+    "validate_segment_mp3",
+    "generate_silence_mp3",
+    "stitch_mp3s_variable",
     "get_audio_duration",
     "cleanup_wav_files",
     # Storage - Episodes
