@@ -87,13 +87,19 @@ if [ "$TTS_OK" -ne 1 ]; then
     exit 1
 fi
 
-# Pre-flight: Voice check (george_carlin must be loaded)
-echo "[pre-flight] Checking voice availability..." | tee -a "$LOG"
+# Resolve required TTS voice from CHARACTER
+REQUIRED_VOICE=$(python3 -c "
+import os; os.environ['CHARACTER'] = '${CHARACTER}'
+from src.tts import get_tts_voice; print(get_tts_voice())
+" 2>/dev/null) || REQUIRED_VOICE="${CHARACTER}"
+
+# Pre-flight: Voice check (required voice must be loaded)
+echo "[pre-flight] Checking voice availability (need: ${REQUIRED_VOICE})..." | tee -a "$LOG"
 VOICES_RESP=$(curl -sf http://192.168.0.134:7849/voices 2>/dev/null) || VOICES_RESP=""
-if echo "$VOICES_RESP" | grep -q "george_carlin"; then
-    echo "  Voice george_carlin available" | tee -a "$LOG"
+if echo "$VOICES_RESP" | grep -q "\"${REQUIRED_VOICE}\""; then
+    echo "  Voice ${REQUIRED_VOICE} available" | tee -a "$LOG"
 else
-    echo "  WARNING: george_carlin not found in voices, triggering server restart..." | tee -a "$LOG"
+    echo "  WARNING: ${REQUIRED_VOICE} not found in voices, triggering server restart..." | tee -a "$LOG"
     curl -sf -X POST http://192.168.0.134:7849/restart > /dev/null 2>&1 || true
 
     # Wait up to 120s for server to come back
@@ -114,10 +120,10 @@ else
 
     # Re-check voices after restart
     VOICES_RESP=$(curl -sf http://192.168.0.134:7849/voices 2>/dev/null) || VOICES_RESP=""
-    if echo "$VOICES_RESP" | grep -q "george_carlin"; then
-        echo "  Voice george_carlin available after restart" | tee -a "$LOG"
+    if echo "$VOICES_RESP" | grep -q "\"${REQUIRED_VOICE}\""; then
+        echo "  Voice ${REQUIRED_VOICE} available after restart" | tee -a "$LOG"
     else
-        notify "FAILURE" "Episode ${EPISODE_DATE}: george_carlin voice still missing after TTS restart"
+        notify "FAILURE" "Episode ${EPISODE_DATE}: ${REQUIRED_VOICE} voice still missing after TTS restart"
         exit 1
     fi
 fi
