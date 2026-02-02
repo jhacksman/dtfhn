@@ -74,6 +74,41 @@ CHARACTER_CONFIG = {
         "intro_host_line": "I'm your [descriptor] host, A I George Carlin.",
         "intro_show_line": "We are your daily tech feed for Hacker News, a website [short riff on what HN is].",
     },
+    "stephen_fry": {
+        "file": "characters/STEPHEN_FRY.md",
+        "tts_voice": "stephen_fry",
+        "display_name": "Jack Hacksman",
+        "intro_host_line": "I'm your [descriptor] host, Jack Hacksman.",
+        "intro_show_line": "We are your daily tech feed for Hacker News, a website [short riff on what HN is].",
+    },
+    "philip_fry": {
+        "file": "characters/PHILIP_FRY.md",
+        "tts_voice": "philip_fry",
+        "display_name": "Jack Hacksman",
+        "intro_host_line": "I'm your [descriptor] host, Jack Hacksman.",
+        "intro_show_line": "We are your daily tech feed for Hacker News, a website [short riff on what HN is].",
+    },
+    "noel": {
+        "file": "characters/NOEL.md",
+        "tts_voice": "noel",
+        "display_name": "Jack Hacksman",
+        "intro_host_line": "I'm your [descriptor] host, Jack Hacksman.",
+        "intro_show_line": "We are your daily tech feed for Hacker News, a website [short riff on what HN is].",
+    },
+    "scarjo": {
+        "file": "characters/SCARJO.md",
+        "tts_voice": "scarjo",
+        "display_name": "Jackie Hackswoman",
+        "intro_host_line": "I'm your [descriptor] host, Jackie Hackswoman.",
+        "intro_show_line": "We are your daily tech feed for Hacker News, a website [short riff on what HN is].",
+    },
+    "lynch": {
+        "file": "characters/LYNCH.md",
+        "tts_voice": "lynch",
+        "display_name": "Jack Hacksman",
+        "intro_host_line": "I'm your [descriptor] host, Jack Hacksman.",
+        "intro_show_line": "We are your daily tech feed for Hacker News, a website [short riff on what HN is].",
+    },
 }
 
 DEFAULT_CHARACTER = "forbin"
