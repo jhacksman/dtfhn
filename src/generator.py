@@ -545,6 +545,7 @@ Do NOT include stage directions, asterisks, or formatting of any kind.
 Write the script now."""
 
     script = call_claude(prompt)
+    script = sanitize_llm_output(script)
     _validate_llm_output(script, "generate_script", min_words=50)
 
     # Record in scaffold for anti-repetition tracking
@@ -678,6 +679,7 @@ Just the transition, nothing else. No quotes or formatting.
 Do NOT start with "Speaking of" or "From [X] to [Y]"."""
 
     text = call_claude(prompt)
+    text = sanitize_llm_output(text)
     _validate_llm_output(text, "generate_interstitial", min_words=5)
     return text
 
@@ -867,6 +869,169 @@ def _strip_preamble(text: str) -> str:
     return text
 
 
+# ---------------------------------------------------------------------------
+# LLM output sanitization — runs on ALL generated content before disk write
+# ---------------------------------------------------------------------------
+
+# Preamble patterns: lines the LLM emits before the actual script content.
+# These are checked line-by-line from the top; once we hit a line that doesn't
+# match any pattern, we stop stripping (conservative approach).
+_PREAMBLE_LINE_PATTERNS = [
+    # Chain-of-thought leakage
+    re.compile(r"^now\s+I\s+(have|need|can|will|should|'ll|let)", re.IGNORECASE),
+    re.compile(r"^let\s+me\s+(write|create|craft|compose|draft|generate|think|start|begin|do)", re.IGNORECASE),
+    re.compile(r"^I('ll| will| need to| should| can)\s+(write|create|craft|compose|draft|generate|start)", re.IGNORECASE),
+    # "Here's the X" / "Here is the X"
+    re.compile(r"^here'?s?\s+(the|your|an?|my)\s+", re.IGNORECASE),
+    re.compile(r"^here\s+is\s+(the|your|an?|my)\s+", re.IGNORECASE),
+    # Compliance phrases
+    re.compile(r"^sure[,!.]", re.IGNORECASE),
+    re.compile(r"^(okay|ok|alright|absolutely|certainly|of course)[,!.\s]", re.IGNORECASE),
+    # Meta-commentary about the task
+    re.compile(r"^(this|the)\s+(script|segment|intro|outro|transition|piece)\s+(is|should|will|covers)", re.IGNORECASE),
+    re.compile(r"^\d+\s+words?\s*[—–\-:]", re.IGNORECASE),  # Word count notes
+    re.compile(r"^word\s+count\s*[:\-—]", re.IGNORECASE),
+    # Empty or whitespace-only lines (strip from top)
+    re.compile(r"^$"),
+]
+
+# Trailing patterns: meta-commentary the LLM appends after the script.
+_TRAILING_LINE_PATTERNS = [
+    re.compile(r"^let\s+me\s+know\s+(if|whether|what)", re.IGNORECASE),
+    re.compile(r"^(hope\s+this|I\s+hope\s+this|does\s+this)", re.IGNORECASE),
+    re.compile(r"^(want\s+me\s+to|shall\s+I|should\s+I|would\s+you\s+like)", re.IGNORECASE),
+    re.compile(r"^(feel\s+free|don'?t\s+hesitate)", re.IGNORECASE),
+    re.compile(r"^(note|N\.?B\.?|P\.?S\.?)\s*[:\-—]", re.IGNORECASE),
+    re.compile(r"^\d+\s+words?\s*[—–\-.]?\s*$", re.IGNORECASE),  # Bare word count
+    re.compile(r"^word\s+count\s*[:\-—]\s*\d+", re.IGNORECASE),
+    re.compile(r"^---+\s*$"),  # Trailing separators
+    re.compile(r"^$"),  # Trailing blank lines
+]
+
+
+def sanitize_llm_output(text: str) -> str:
+    """Sanitize LLM output by stripping preamble, trailing meta, and markdown artifacts.
+
+    This is the single sanitization entry point for ALL generated content
+    (scripts, intros, outros, interstitials) before it hits disk or storage.
+
+    The approach is conservative — we'd rather leave a little junk than
+    accidentally strip legitimate script content.
+
+    Strategy:
+    1. Strip leading preamble lines (chain-of-thought, "Here's the script:", etc.)
+    2. Handle ``---`` separators near the top as preamble/content boundaries
+    3. Strip trailing meta-commentary ("Let me know if you'd like changes", etc.)
+    4. Strip markdown artifacts (headers, bold, code fences, horizontal rules)
+    5. Final whitespace cleanup
+    """
+    if not text or not text.strip():
+        return text.strip() if text else text
+
+    text = text.strip()
+
+    # --- Phase 1: Handle "---" separator as preamble boundary ---
+    # If the text has a "---" line within the first ~15 lines, everything
+    # before (and including) it is likely preamble. But only if there's
+    # substantial content AFTER it.
+    lines = text.splitlines()
+    separator_idx = None
+    search_limit = min(15, len(lines))
+    for i in range(search_limit):
+        if lines[i].strip().startswith("---"):
+            separator_idx = i
+            break  # Use the FIRST separator near the top
+
+    if separator_idx is not None:
+        after_sep = "\n".join(lines[separator_idx + 1:]).strip()
+        before_sep = "\n".join(lines[:separator_idx]).strip()
+        # Only strip if: content after separator is substantial AND
+        # content before looks like preamble (short or matches patterns)
+        if len(after_sep) > 100 and (
+            len(before_sep) < 500
+            or any(p.match(before_sep.splitlines()[0].strip()) for p in _PREAMBLE_LINE_PATTERNS if before_sep)
+        ):
+            logger.info("Stripped preamble before '---' separator (%d chars)", len(before_sep) + 4)
+            text = after_sep
+            lines = text.splitlines()
+
+    # --- Phase 2: Strip leading preamble lines ---
+    start = 0
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            start = i + 1
+            continue
+        matched = False
+        for pattern in _PREAMBLE_LINE_PATTERNS:
+            if pattern.match(stripped):
+                matched = True
+                break
+        if matched:
+            start = i + 1
+        else:
+            break
+
+    if start > 0:
+        stripped_lines = lines[:start]
+        logger.info(
+            "Stripped %d preamble line(s): %s",
+            start,
+            [l.strip()[:60] for l in stripped_lines if l.strip()],
+        )
+        lines = lines[start:]
+
+    # --- Phase 3: Strip trailing meta-commentary ---
+    end = len(lines)
+    for i in range(len(lines) - 1, -1, -1):
+        stripped = lines[i].strip()
+        if not stripped:
+            end = i
+            continue
+        matched = False
+        for pattern in _TRAILING_LINE_PATTERNS:
+            if pattern.match(stripped):
+                matched = True
+                break
+        if matched:
+            end = i
+        else:
+            break
+
+    if end < len(lines):
+        stripped_lines = lines[end:]
+        logger.info(
+            "Stripped %d trailing line(s): %s",
+            len(lines) - end,
+            [l.strip()[:60] for l in stripped_lines if l.strip()],
+        )
+        lines = lines[:end]
+
+    # --- Phase 4: Strip markdown artifacts ---
+    cleaned = []
+    for line in lines:
+        stripped = line.strip()
+        # Remove markdown headers (# Title, ## Section, etc.)
+        if re.match(r"^#{1,6}\s+", stripped):
+            # Skip header lines entirely — they're not spoken content
+            continue
+        # Remove code fences
+        if stripped.startswith("```"):
+            continue
+        # Remove horizontal rules that survived phase 1
+        if re.match(r"^-{3,}\s*$", stripped) or re.match(r"^\*{3,}\s*$", stripped):
+            continue
+        cleaned.append(line)
+
+    text = "\n".join(cleaned)
+    # Remove bold/italic markdown markers
+    text = re.sub(r"\*{1,3}(.+?)\*{1,3}", r"\1", text)
+    # Remove inline code backticks
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+
+    return text.strip()
+
+
 def _check_word_count(text: str, label: str, max_words: int) -> None:
     """Log a warning if word count exceeds limit by more than 20%."""
     wc = count_words(text)
@@ -912,9 +1077,10 @@ def generate_intro(
     prompt_template = _build_intro_prompt(character)
     prompt = prompt_template.format(tts_date=tts_date, episode_body=episode_body)
     text = call_claude(prompt)
+    text = sanitize_llm_output(text)
     _validate_llm_output(text, "generate_intro", min_words=20)
 
-    # Harden output
+    # Harden output (intro-specific: static prefix enforcement)
     text = _strip_preamble(text)
     text = _strip_markdown(text)
     if not text.startswith(_INTRO_STATIC_PREFIX):
@@ -956,9 +1122,10 @@ def generate_outro(
     prompt_template = _build_outro_prompt(character)
     prompt = prompt_template.format(tts_date=tts_date, episode_body=episode_body)
     text = call_claude(prompt)
+    text = sanitize_llm_output(text)
     _validate_llm_output(text, "generate_outro", min_words=20)
 
-    # Harden output
+    # Harden output (outro-specific: static suffix enforcement)
     text = _strip_preamble(text)
     text = _strip_markdown(text)
     if not text.rstrip().endswith(_OUTRO_STATIC_SUFFIX):

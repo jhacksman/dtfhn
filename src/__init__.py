@@ -42,6 +42,7 @@ from .generator import (
     generate_script,
     generate_episode_scripts,
     generate_interstitial,
+    sanitize_llm_output,
 )
 from .pipeline import (
     run_episode_pipeline,
@@ -99,6 +100,7 @@ __all__ = [
     "generate_script",
     "generate_episode_scripts",
     "generate_interstitial",
+    "sanitize_llm_output",
     # Pipeline
     "run_episode_pipeline",
     "run_test_pipeline",
