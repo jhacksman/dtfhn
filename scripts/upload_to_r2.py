@@ -223,10 +223,10 @@ def generate_content_encoded(episode_date: str) -> str | None:
         li = f"<li>{title}"
         links = []
         if url:
-            links.append(f'<a href="{html_mod.escape(url)}">Article</a>')
+            links.append(f'<a href="{html_mod.escape(url)}" target="_blank" rel="noopener noreferrer">Article</a>')
         if hn_id:
             hn_url = f"https://news.ycombinator.com/item?id={hn_id}"
-            links.append(f'<a href="{hn_url}">HN Discussion</a>')
+            links.append(f'<a href="{hn_url}" target="_blank" rel="noopener noreferrer">HN Discussion</a>')
         if links:
             li += f"<br/>({' | '.join(links)})"
         li += "</li>"
