@@ -50,8 +50,8 @@ on_error() {
 trap 'on_error' ERR
 trap 'rm -f "$LOCKFILE"' EXIT
 
-# Character selection (default: forbin)
-export CHARACTER="${CHARACTER:-forbin}"
+# Character selection (default: jack)
+export CHARACTER="${CHARACTER:-jack}"
 
 EPISODE_DATE="${1:-$(date +%Y-%m-%d-%H%M)}"
 LOG="/tmp/dtfhn-${EPISODE_DATE}.log"

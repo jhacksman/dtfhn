@@ -2,8 +2,13 @@
 
 Interfaces with quato TTS server. Server has 3 GPUs that process
 requests in parallel. Voice selection is driven by CHARACTER env var.
+
+Includes runaway detection: if rendered audio is >= 2x expected duration
+(based on word count), the segment is automatically re-rendered.
 """
 import os
+import struct
+import subprocess
 import time
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -19,6 +24,7 @@ CHARACTER_TTS_VOICES = {
     "forbin": "forbin",
     "carlin": "george_carlin",
     "gc": "george_carlin",
+    "jack": "noel",
 }
 
 
@@ -131,50 +137,165 @@ def validate_wav_bytes(data: bytes) -> tuple[bool, str]:
     return (True, "")
 
 
+def get_wav_duration_from_bytes(data: bytes) -> float:
+    """
+    Calculate WAV duration from raw bytes without writing to disk.
+    
+    Parses WAV header to extract sample rate and data size.
+    
+    Args:
+        data: WAV file bytes
+    
+    Returns:
+        Duration in seconds, or 0.0 on parse error
+    """
+    try:
+        if len(data) < 44:
+            return 0.0
+        
+        # Find the 'fmt ' chunk (starts after RIFF header at offset 12)
+        fmt_offset = data.find(b'fmt ')
+        if fmt_offset == -1:
+            return 0.0
+        
+        # Parse fmt chunk: skip chunk id (4) + chunk size (4)
+        # Audio format (2), num channels (2), sample rate (4), byte rate (4), block align (2), bits per sample (2)
+        fmt_data = data[fmt_offset + 8:]
+        if len(fmt_data) < 16:
+            return 0.0
+        
+        num_channels = struct.unpack('<H', fmt_data[2:4])[0]
+        sample_rate = struct.unpack('<I', fmt_data[4:8])[0]
+        bits_per_sample = struct.unpack('<H', fmt_data[14:16])[0]
+        
+        if sample_rate == 0 or bits_per_sample == 0 or num_channels == 0:
+            return 0.0
+        
+        # Find the 'data' chunk
+        data_offset = data.find(b'data')
+        if data_offset == -1:
+            return 0.0
+        
+        # Data chunk size is 4 bytes after 'data'
+        data_size = struct.unpack('<I', data[data_offset + 4:data_offset + 8])[0]
+        
+        # Calculate duration: data_size / (sample_rate * num_channels * bytes_per_sample)
+        bytes_per_sample = bits_per_sample // 8
+        duration = data_size / (sample_rate * num_channels * bytes_per_sample)
+        return duration
+    except Exception:
+        return 0.0
+
+
+def get_wav_duration_from_file(wav_path: Path) -> float:
+    """Get duration of WAV file using ffprobe."""
+    try:
+        result = subprocess.run(
+            ['ffprobe', '-v', 'quiet', '-show_entries', 'format=duration', '-of', 'csv=p=0', str(wav_path)],
+            capture_output=True, text=True, timeout=10
+        )
+        return float(result.stdout.strip())
+    except Exception:
+        return 0.0
+
+
+def estimate_expected_duration(text: str) -> float:
+    """
+    Estimate expected TTS duration based on word count.
+    
+    Uses ~150 words per minute (2.5 words/second) as baseline.
+    Returns a conservative estimate (actual TTS is often slightly slower).
+    
+    Args:
+        text: Text to be spoken
+    
+    Returns:
+        Expected duration in seconds
+    """
+    word_count = len(text.split())
+    # 150 wpm = 2.5 words/second. Use 2.3 to be conservative.
+    return word_count / 2.3
+
+
+# Runaway detection configuration
+RUNAWAY_THRESHOLD_MULTIPLIER = 2.0  # If duration >= 2x expected, it's a runaway
+MAX_RUNAWAY_RETRIES = 2  # Max times to retry a runaway segment
+
+
 def text_to_speech(text: str, output_path: Path, voice: str = TTS_VOICE) -> tuple[bool, str]:
     """
-    Generate WAV from text via quato TTS.
+    Generate WAV from text via quato TTS with runaway detection.
+    
+    If the rendered audio duration is >= 2x the expected duration (based on
+    word count), the segment is considered a runaway and automatically retried.
     
     Args:
         text: Text to convert to speech
         output_path: Where to save the WAV file
-        voice: Voice profile to use (default: george_carlin)
+        voice: Voice profile to use (default from CHARACTER env)
     
     Returns:
         (success, error_message) - error_message is empty on success
     """
-    try:
-        # Add em-dashes for natural breathing pauses
-        prepared_text = prepare_text_for_tts(text)
-        
-        response = requests.post(
-            TTS_URL,
-            headers={"Content-Type": "application/json"},
-            json={"text": prepared_text, "voice": voice, "timeout": 0},
-            timeout=(10, TTS_TIMEOUT),  # 10s connect, TTS_TIMEOUT read — detect dead server fast
-        )
-        
-        # Track job ID from response header
-        job_id = response.headers.get("X-Job-Id")
-        
-        # Check HTTP status
-        if response.status_code != 200:
-            return (False, f"HTTP {response.status_code} (job={job_id}): {response.text[:100]}")
-        
-        # Validate WAV content
-        is_valid, error = validate_wav_bytes(response.content)
-        if not is_valid:
-            return (False, error)
-        
-        # Write validated WAV
-        output_path.write_bytes(response.content)
-        return (True, "")
-    except requests.exceptions.Timeout:
-        return (False, "request timeout")
-    except requests.exceptions.ConnectionError as e:
-        return (False, f"connection error: {e}")
-    except Exception as e:
-        return (False, f"unexpected error: {e}")
+    expected_duration = estimate_expected_duration(text)
+    
+    for attempt in range(MAX_RUNAWAY_RETRIES + 1):
+        try:
+            # Add em-dashes for natural breathing pauses
+            prepared_text = prepare_text_for_tts(text)
+            
+            response = requests.post(
+                TTS_URL,
+                headers={"Content-Type": "application/json"},
+                json={"text": prepared_text, "voice": voice, "timeout": 0},
+                timeout=(10, TTS_TIMEOUT),  # 10s connect, TTS_TIMEOUT read — detect dead server fast
+            )
+            
+            # Track job ID from response header
+            job_id = response.headers.get("X-Job-Id")
+            
+            # Check HTTP status
+            if response.status_code != 200:
+                return (False, f"HTTP {response.status_code} (job={job_id}): {response.text[:100]}")
+            
+            # Validate WAV content
+            is_valid, error = validate_wav_bytes(response.content)
+            if not is_valid:
+                return (False, error)
+            
+            # RUNAWAY DETECTION: Check duration before writing
+            actual_duration = get_wav_duration_from_bytes(response.content)
+            if actual_duration > 0 and expected_duration > 0:
+                ratio = actual_duration / expected_duration
+                if ratio >= RUNAWAY_THRESHOLD_MULTIPLIER:
+                    # Runaway detected!
+                    if attempt < MAX_RUNAWAY_RETRIES:
+                        print(f"    ⚠️ RUNAWAY detected: {actual_duration:.1f}s actual vs {expected_duration:.1f}s expected ({ratio:.1f}x) — retrying...")
+                        time.sleep(2)  # Brief pause before retry
+                        continue
+                    else:
+                        return (False, f"runaway after {MAX_RUNAWAY_RETRIES} retries: {actual_duration:.1f}s vs {expected_duration:.1f}s expected ({ratio:.1f}x)")
+            
+            # Write validated WAV
+            output_path.write_bytes(response.content)
+            
+            # Log duration info for non-runaway segments
+            if actual_duration > 0 and expected_duration > 0:
+                ratio = actual_duration / expected_duration
+                if ratio > 1.5:  # Warn if >1.5x but <2x
+                    print(f"    ℹ️ Slow render: {actual_duration:.1f}s actual vs {expected_duration:.1f}s expected ({ratio:.1f}x)")
+            
+            return (True, "")
+            
+        except requests.exceptions.Timeout:
+            return (False, "request timeout")
+        except requests.exceptions.ConnectionError as e:
+            return (False, f"connection error: {e}")
+        except Exception as e:
+            return (False, f"unexpected error: {e}")
+    
+    # Should never reach here, but just in case
+    return (False, "max retries exhausted")
 
 
 def _tts_worker(args: tuple[str, str, Path, str]) -> tuple[str, Path | None, str]:

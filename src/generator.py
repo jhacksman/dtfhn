@@ -44,11 +44,20 @@ VOICE_CREDITS = {
     "lynch": "Voice inspired by the filmmaker David Lynch.",
 }
 
+# Characters with no voice credit line (original character, no attribution needed)
+NO_VOICE_CREDIT_CHARACTERS = {"jack"}
+
 DEFAULT_VOICE_CREDIT = "A I generated voice."
 
 
-def get_voice_credit(tts_voice: str) -> str:
-    """Look up the voice credit line for a TTS voice name."""
+def get_voice_credit(tts_voice: str, character: str | None = None) -> str | None:
+    """
+    Look up the voice credit line for a TTS voice name.
+    
+    Returns None if character is in NO_VOICE_CREDIT_CHARACTERS (no attribution needed).
+    """
+    if character and character.lower() in NO_VOICE_CREDIT_CHARACTERS:
+        return None
     return VOICE_CREDITS.get(tts_voice, DEFAULT_VOICE_CREDIT)
 
 
@@ -109,9 +118,16 @@ CHARACTER_CONFIG = {
         "intro_host_line": "I'm your [descriptor] host, Jack Hacksman.",
         "intro_show_line": "We are your daily tech feed for Hacker News, a website [short riff on what HN is].",
     },
+    "jack": {
+        "file": "characters/jack.md",
+        "tts_voice": "noel",
+        "display_name": "Jack Hacksman",
+        "intro_host_line": "I'm your [descriptor] host, Jack Hacksman.",
+        "intro_show_line": "We are your daily tech feed for Hacker News, a website [short riff on what HN is].",
+    },
 }
 
-DEFAULT_CHARACTER = "forbin"
+DEFAULT_CHARACTER = "jack"
 
 
 def get_character() -> str:
@@ -810,9 +826,23 @@ def _build_intro_prompt(character: str | None = None) -> str:
 
 def _build_outro_prompt(character: str | None = None) -> str:
     """Build the outro prompt template for the active character."""
-    config = get_character_config(character)
+    char = character or get_character()
+    config = get_character_config(char)
     display = config["display_name"]
-    voice_credit = get_voice_credit(config["tts_voice"])
+    voice_credit = get_voice_credit(config["tts_voice"], char)
+
+    # Build credits section — voice_credit line is optional
+    credits_lines = [
+        '   - "This podcast is entirely A I generated."',
+    ]
+    if voice_credit:
+        credits_lines.append(f'   - "{voice_credit}"')
+    credits_lines.extend([
+        '   - "Scripts by Claude Opus four point five."',
+        '   - "Voice by Qwen three T T S."',
+        '   - "Not affiliated with Hacker News or Y Combinator."',
+    ])
+    credits_section = "\n".join(credits_lines)
 
     return (
         "You are writing the OUTRO for today's episode in the voice of {display_name}.\n"
@@ -827,11 +857,7 @@ def _build_outro_prompt(character: str | None = None) -> str:
         '2. "This has been your daily tech feed for Hacker News for {{tts_date}}." — STATIC. '
         '"This has been" NOT "That\'s been". This exact line every episode.\n'
         "3. Credits — STATIC content, DYNAMIC delivery:\n"
-        '   - "This podcast is entirely A I generated."\n'
-        '   - "{voice_credit}"\n'
-        '   - "Scripts by Claude Opus four point five."\n'
-        '   - "Voice by Qwen three T T S."\n'
-        '   - "Not affiliated with Hacker News or Y Combinator."\n'
+        "{credits_section}\n"
         '4. "Now go [dynamic uplifting imperative]. We\'ll see you back here tomorrow." — '
         "The 'Now go...' part is DYNAMIC — varied, always optimistic and uplifting. "
         "Always forward-looking, always encouraging. "
@@ -850,7 +876,7 @@ def _build_outro_prompt(character: str | None = None) -> str:
         "{{episode_body}}"
     ).format(
         display_name=display,
-        voice_credit=voice_credit,
+        credits_section=credits_section,
     )
 
 
