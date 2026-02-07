@@ -1225,6 +1225,12 @@ def sanitize_llm_output(text: str) -> str:
     # Remove inline code backticks
     text = re.sub(r"`([^`]+)`", r"\1", text)
 
+    # --- Phase 5: Em-dash → [pause] conversion for TTS ---
+    # Em-dashes create natural audio break points
+    text = re.sub(r"\s*—\s*", " [pause] ", text)
+    # Clean up any double [pause] markers
+    text = re.sub(r"\[pause\]\s*\[pause\]", "[pause]", text)
+
     return text.strip()
 
 
@@ -1237,6 +1243,41 @@ def _check_word_count(text: str, label: str, max_words: int) -> None:
             "%s word count %d exceeds %d-word limit (threshold %d)",
             label, wc, max_words, threshold,
         )
+
+
+def check_anti_patterns(text: str, label: str = "Episode") -> list[str]:
+    """
+    Detect overused anti-patterns in generated text.
+    
+    Returns list of warnings. Logs warnings if patterns exceed limits.
+    
+    Anti-patterns checked:
+    - "not X, not Y" / "not X. Not Y" constructions (max 2 per episode)
+    """
+    warnings = []
+    
+    # Pattern: "not X, not Y" or "not X. Not Y" or "Not X, not Y" etc.
+    # Match: "not <word(s)>, not" or "not <word(s)>. Not" (case insensitive)
+    not_not_pattern = re.compile(
+        r"\bnot\s+[^,.!?]+[,.]?\s*not\b",
+        re.IGNORECASE
+    )
+    matches = not_not_pattern.findall(text)
+    
+    if len(matches) > 2:
+        warning = (
+            f"{label}: 'not X, not Y' pattern used {len(matches)} times "
+            f"(max 2). Instances: {matches[:5]}"
+        )
+        logger.warning(warning)
+        warnings.append(warning)
+    elif len(matches) > 0:
+        logger.info(
+            "%s: 'not X, not Y' pattern count: %d (within limit)",
+            label, len(matches)
+        )
+    
+    return warnings
 
 
 # Static safety-net fragments

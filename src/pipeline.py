@@ -28,6 +28,7 @@ from .generator import (
     get_character_config,
     convert_emdashes_to_pauses,
     generate_story_header,
+    check_anti_patterns,
 )
 from .transcript import generate_vtt, generate_plain_transcript
 from .chapters import generate_chapters_json, embed_chapters, load_stories_for_episode
@@ -523,8 +524,14 @@ def run_episode_pipeline(
 
     episode_words = count_words(full_text)
 
+    # Check for anti-patterns (logs warnings if limits exceeded)
+    anti_pattern_warnings = check_anti_patterns(full_text, f"Episode {episode_date}")
+    
     if verbose:
         print(f"\n  Episode assembled: {episode_words} words")
+        if anti_pattern_warnings:
+            for warning in anti_pattern_warnings:
+                print(f"  ⚠️  {warning}")
         print(f"  Saved to: {episode_txt_path}")
 
     # Step 6: Generate metadata files (transcript, chapters)
