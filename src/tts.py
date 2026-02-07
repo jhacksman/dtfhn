@@ -5,8 +5,13 @@ requests in parallel. Voice selection is driven by CHARACTER env var.
 
 Includes runaway detection: if rendered audio is >= 2x expected duration
 (based on word count), the segment is automatically re-rendered.
+
+Segment granularity: Scripts are split at [pause] markers AND paragraph
+breaks. Each chunk becomes a separate TTS clip. 1 second silence is
+inserted between clips during merge.
 """
 import os
+import re
 import struct
 import subprocess
 import time
@@ -36,6 +41,153 @@ def get_tts_voice() -> str:
 
 # Default voice (evaluated at import time, but functions use get_tts_voice() for dynamic lookup)
 TTS_VOICE = get_tts_voice()
+
+# Silence gap between TTS clips (seconds)
+CLIP_SILENCE_GAP = 1.0
+
+
+def split_script_into_chunks(text: str) -> list[str]:
+    """
+    Split script text into TTS chunks at [pause] markers and paragraph breaks.
+    
+    Each chunk becomes a separate TTS job. Chunks are merged with 1s silence
+    gaps to create natural-sounding audio.
+    
+    Split points:
+    - [pause] markers (explicit pause points from em-dashes)
+    - Double newlines (paragraph breaks)
+    
+    Args:
+        text: Script text with [pause] markers
+    
+    Returns:
+        List of non-empty text chunks, each becoming a TTS clip
+    """
+    # First, normalize the text
+    text = text.strip()
+    
+    # Replace [pause] with a unique delimiter
+    DELIM = "<<<SPLIT>>>"
+    text = re.sub(r'\[pause\]', DELIM, text, flags=re.IGNORECASE)
+    
+    # Replace double newlines (paragraph breaks) with delimiter
+    text = re.sub(r'\n\s*\n', DELIM, text)
+    
+    # Split by delimiter
+    chunks = text.split(DELIM)
+    
+    # Clean up: strip whitespace, filter empty chunks
+    chunks = [c.strip() for c in chunks]
+    chunks = [c for c in chunks if c]
+    
+    return chunks
+
+
+def merge_wavs_with_silence(
+    wav_files: list[Path],
+    output_path: Path,
+    silence_seconds: float = CLIP_SILENCE_GAP,
+) -> bool:
+    """
+    Merge WAV files with silence gaps between each clip.
+    
+    Uses ffmpeg to concatenate WAVs with silence inserts.
+    
+    Args:
+        wav_files: List of WAV file paths in order
+        output_path: Output WAV path
+        silence_seconds: Seconds of silence between clips (default 1.0)
+    
+    Returns:
+        True on success, False on failure
+    """
+    if not wav_files:
+        return False
+    
+    if len(wav_files) == 1:
+        # Single file, just copy
+        import shutil
+        shutil.copy(wav_files[0], output_path)
+        return True
+    
+    try:
+        # Build ffmpeg filter for concatenation with silence
+        # Create a concat filter that inserts silence between each clip
+        
+        # First, create a silent audio clip
+        # We'll use anullsrc for silence generation
+        
+        # Build complex filter:
+        # - Input each WAV
+        # - Create silence segment
+        # - Interleave: wav1, silence, wav2, silence, ..., wavN
+        
+        inputs = []
+        filter_parts = []
+        
+        for i, wav in enumerate(wav_files):
+            inputs.extend(['-i', str(wav)])
+        
+        # Number of inputs
+        n = len(wav_files)
+        
+        # Build filter graph
+        # Each input becomes [0:a], [1:a], etc.
+        # We need to insert silence between them
+        
+        # Generate silence of specified duration
+        # anullsrc generates silence, atrim trims it to duration
+        silence_filter = f"anullsrc=r=24000:cl=mono,atrim=0:{silence_seconds}[silence]"
+        
+        # Build the concat sequence: file0, silence, file1, silence, ..., fileN
+        concat_inputs = []
+        for i in range(n):
+            concat_inputs.append(f"[{i}:a]")
+            if i < n - 1:  # No silence after last file
+                concat_inputs.append("[silence]")
+        
+        # Total streams: n files + (n-1) silences
+        total_streams = n + (n - 1)
+        
+        # Problem: we only have one [silence] but need to use it n-1 times
+        # Solution: Use asplit to duplicate the silence stream
+        
+        if n > 1:
+            # Generate n-1 copies of silence
+            silence_copies = ",".join(f"[s{i}]" for i in range(n - 1))
+            silence_gen = f"anullsrc=r=24000:cl=mono,atrim=0:{silence_seconds},asplit={n-1}{silence_copies}"
+            
+            # Now build concat with the duplicated silences
+            concat_inputs = []
+            for i in range(n):
+                concat_inputs.append(f"[{i}:a]")
+                if i < n - 1:
+                    concat_inputs.append(f"[s{i}]")
+            
+            concat_str = "".join(concat_inputs)
+            full_filter = f"{silence_gen};{concat_str}concat=n={total_streams}:v=0:a=1[out]"
+        else:
+            full_filter = "[0:a]acopy[out]"
+        
+        cmd = [
+            'ffmpeg', '-y',
+            *inputs,
+            '-filter_complex', full_filter,
+            '-map', '[out]',
+            str(output_path)
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        
+        if result.returncode != 0:
+            print(f"ffmpeg merge failed: {result.stderr}")
+            return False
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error merging WAVs: {e}")
+        return False
 
 # Robust TTS pipeline configuration
 POLL_INTERVAL_SECONDS = 5  # How often to poll /status
@@ -644,3 +796,114 @@ def text_to_speech_parallel_robust(
             print(f"  - {name}: {reason}")
     
     return all_paths, final_failed
+
+
+def render_segment_chunked(
+    segment_name: str,
+    text: str,
+    output_dir: Path,
+    voice: str = None,
+) -> tuple[Path | None, str]:
+    """
+    Render a segment by splitting into chunks at [pause] markers and paragraphs.
+    
+    Each chunk becomes a separate TTS clip. Clips are merged with 1s silence
+    between each to create natural-sounding audio.
+    
+    Args:
+        segment_name: Base name for the segment (e.g., "01_-_script_01")
+        text: Script text with [pause] markers
+        output_dir: Output directory for WAV files
+        voice: TTS voice to use (default from CHARACTER env)
+    
+    Returns:
+        (output_path, error) - output_path is None on failure
+    """
+    voice = voice or get_tts_voice()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Split into chunks
+    chunks = split_script_into_chunks(text)
+    
+    if not chunks:
+        return (None, "no text chunks after split")
+    
+    print(f"  {segment_name}: {len(chunks)} chunks")
+    
+    # Create temp dir for chunk WAVs
+    chunk_dir = output_dir / f".{segment_name}_chunks"
+    chunk_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Build chunk segments
+    chunk_segments = [
+        (f"{segment_name}_c{i:03d}", chunk)
+        for i, chunk in enumerate(chunks)
+    ]
+    
+    # Render all chunks in parallel
+    chunk_wavs, failures = text_to_speech_parallel(
+        chunk_segments, chunk_dir, voice, max_workers=len(chunks)
+    )
+    
+    if failures:
+        # Clean up
+        import shutil
+        shutil.rmtree(chunk_dir, ignore_errors=True)
+        return (None, f"chunk failures: {list(failures.keys())}")
+    
+    # Merge chunks with silence gaps
+    output_path = output_dir / f"{segment_name}.wav"
+    
+    # Sort chunk WAVs by name to maintain order
+    chunk_wavs_sorted = sorted(chunk_wavs, key=lambda p: p.name)
+    
+    success = merge_wavs_with_silence(chunk_wavs_sorted, output_path, CLIP_SILENCE_GAP)
+    
+    # Clean up chunk dir
+    import shutil
+    shutil.rmtree(chunk_dir, ignore_errors=True)
+    
+    if success:
+        return (output_path, "")
+    else:
+        return (None, "merge failed")
+
+
+def render_episode_chunked(
+    segments: list[tuple[str, str]],
+    output_dir: Path,
+    voice: str = None,
+) -> tuple[list[Path], list[str]]:
+    """
+    Render all episode segments using chunked TTS.
+    
+    Each segment is split at [pause] markers and paragraph breaks.
+    Chunks are rendered in parallel and merged with 1s silence gaps.
+    
+    Args:
+        segments: List of (segment_name, text) tuples
+        output_dir: Output directory for WAV files
+        voice: TTS voice to use (default from CHARACTER env)
+    
+    Returns:
+        (successful_paths, failed_names)
+    """
+    voice = voice or get_tts_voice()
+    
+    print(f"Rendering {len(segments)} segments with chunked TTS...")
+    
+    successful = []
+    failed = []
+    
+    for name, text in segments:
+        path, error = render_segment_chunked(name, text, output_dir, voice)
+        if path:
+            successful.append(path)
+            print(f"  ✓ {name}")
+        else:
+            failed.append(name)
+            print(f"  ✗ {name}: {error}")
+    
+    print(f"\nRendered {len(successful)}/{len(segments)} segments")
+    
+    return successful, failed
