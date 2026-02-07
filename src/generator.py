@@ -385,7 +385,10 @@ class EpisodeScaffold:
             '  - Do NOT use "share the blueprints"\n'
             '  - Do NOT use "No [X], no [Y], no [Z]" triple-negative lists\n'
             '  - Do NOT use "Think about that for a second"\n'
-            '  - Do NOT use "Let that sink in"'
+            '  - Do NOT use "Let that sink in"\n'
+            '  - LIMIT "Not X, not Y, but Z" / "Not X. Not Y." patterns to MAX 1-2 per episode total\n'
+            '  - LIMIT list-of-negations style ("it\'s not A, it\'s not B, it\'s not C") to 1 per episode\n'
+            '  - Avoid preachy/adversarial framing — celebrate wins, don\'t lecture'
         )
         return "\n\n".join(parts)
 
@@ -705,6 +708,8 @@ def generate_interstitial(
     script1: str,
     script2: str,
     next_title: str,
+    current_story_num: int = 0,
+    next_story_num: int = 0,
     character: Optional[str] = None,
 ) -> str:
     """
@@ -714,10 +719,12 @@ def generate_interstitial(
         script1: The script we're leaving
         script2: The script we're entering
         next_title: Title of the next article
+        current_story_num: 1-based story number we're leaving (0 = unknown)
+        next_story_num: 1-based story number we're entering (0 = unknown)
         character: Character name override
 
     Returns:
-        1-2 sentence transition text
+        1-2 sentence transition text (becomes its own TTS clip)
     """
     voice = load_character_voice(character)
     config = get_character_config(character)
@@ -750,7 +757,8 @@ TRANSITION STYLE: {style}
 
 Write a quick pivot. 15-30 words max.
 Just the transition, nothing else. No quotes or formatting.
-Do NOT start with "Speaking of" or "From [X] to [Y]"."""
+Do NOT start with "Speaking of" or "From [X] to [Y]".
+Be joyful and celebratory in tone, not preachy."""
 
     # Retry up to 5 times on empty/short LLM output with backoff
     max_attempts = 5
@@ -850,7 +858,7 @@ def _build_outro_prompt(character: str | None = None) -> str:
     if voice_credit:
         credits_lines.append(f'   - "{voice_credit}"')
     credits_lines.extend([
-        '   - "Scripts by Claude Opus four point five."',
+        '   - "Scripts by Claude Opus four point six."',
         '   - "Voice by Qwen three T T S."',
         '   - "Not affiliated with Hacker News or Y Combinator."',
     ])
@@ -1064,6 +1072,33 @@ def _detect_prompt_leakage(text: str) -> None:
             len(detected),
             "; ".join(f"[{label}] '{preview}'" for label, preview in detected),
         )
+
+
+def convert_emdashes_to_pauses(text: str) -> str:
+    """Convert em-dashes to [pause] markers for TTS segmentation.
+    
+    Em-dashes (—) indicate natural thought breaks and should become
+    pause points where audio is split into separate TTS clips.
+    """
+    # Replace em-dash with [pause] marker
+    # Handle both actual em-dash and double-hyphen representations
+    text = re.sub(r'\s*—\s*', ' [pause] ', text)
+    text = re.sub(r'\s*--\s*', ' [pause] ', text)
+    # Clean up any double spaces
+    text = re.sub(r' +', ' ', text)
+    return text
+
+
+def generate_story_header(story_num: int, title: str) -> str:
+    """Generate a speakable story header.
+    
+    Example: "Story one. France's La Suite Numérique."
+    """
+    from num2words import num2words
+    num_word = num2words(story_num)
+    # Capitalize first letter
+    num_word = num_word.capitalize()
+    return f"Story {num_word.lower()}. {title}."
 
 
 def sanitize_llm_output(text: str) -> str:

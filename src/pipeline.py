@@ -26,6 +26,8 @@ from .generator import (
     count_words,
     get_character,
     get_character_config,
+    convert_emdashes_to_pauses,
+    generate_story_header,
 )
 from .transcript import generate_vtt, generate_plain_transcript
 from .chapters import generate_chapters_json, embed_chapters, load_stories_for_episode
@@ -407,7 +409,11 @@ def run_episode_pipeline(
     scripts_with_counts = generate_episode_scripts(articles, word_target, character=character)
 
     # Save individual scripts and store in DB
+    # Apply em-dash to [pause] conversion for TTS segmentation
     for i, (script, word_count) in enumerate(scripts_with_counts):
+        # Convert em-dashes to [pause] markers
+        script = convert_emdashes_to_pauses(script)
+        
         script_path = episode_dir / f"{segment_name('script', i + 1)}.txt"
         script_path.write_text(script)
 
@@ -417,6 +423,9 @@ def run_episode_pipeline(
             position=i + 1,
             script=script,
         )
+        
+        # Update the tuple with processed script
+        scripts_with_counts[i] = (script, word_count)
 
     scripts = [s for s, _ in scripts_with_counts]
     total_words = sum(c for _, c in scripts_with_counts)
@@ -436,7 +445,14 @@ def run_episode_pipeline(
         # Get next article title
         next_title = articles[i + 1].get("title", "next topic") if i + 1 < len(articles) else "next topic"
 
-        trans = generate_interstitial(scripts[i], scripts[i + 1], next_title, character=character)
+        trans = generate_interstitial(
+            scripts[i], 
+            scripts[i + 1], 
+            next_title, 
+            current_story_num=i + 1,
+            next_story_num=i + 2,
+            character=character,
+        )
         interstitials.append(trans)
 
         # Save individual interstitial
@@ -482,11 +498,19 @@ def run_episode_pipeline(
         print("\n[6/7] ASSEMBLING EPISODE...")
 
     # Build full episode text with zero-padded sequential names
+    # Each story gets: header → [pause] → script content
     segments = []
     segments.append((segment_name("intro"), intro))
 
     for i, script in enumerate(scripts):
-        segments.append((segment_name("script", i + 1), script))
+        # Generate story header (e.g., "Story one. France's La Suite Numérique.")
+        title = articles[i].get("title", f"Story {i + 1}") if i < len(articles) else f"Story {i + 1}"
+        story_header = generate_story_header(i + 1, title)
+        
+        # Prepend header to script with [pause] separator
+        script_with_header = f"{story_header}\n\n[pause]\n\n{script}"
+        
+        segments.append((segment_name("script", i + 1), script_with_header))
         if i < len(interstitials):
             segments.append((segment_name("interstitial", i + 1, i + 2), interstitials[i]))
 
