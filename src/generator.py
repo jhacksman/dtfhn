@@ -752,17 +752,29 @@ Write a quick pivot. 15-30 words max.
 Just the transition, nothing else. No quotes or formatting.
 Do NOT start with "Speaking of" or "From [X] to [Y]"."""
 
-    # Retry up to 3 times on empty/short LLM output
-    for attempt in range(3):
+    # Retry up to 5 times on empty/short LLM output with backoff
+    max_attempts = 5
+    for attempt in range(max_attempts):
         text = call_claude(prompt)
         text = sanitize_llm_output(text)
         try:
             _validate_llm_output(text, "generate_interstitial", min_words=5)
             return text
-        except ValueError:
-            if attempt < 2:
+        except ValueError as e:
+            if attempt < max_attempts - 1:
+                backoff = 2 ** attempt  # 1, 2, 4, 8 seconds
+                logger.warning(
+                    "generate_interstitial attempt %d/%d failed (%s). Retrying in %ds…",
+                    attempt + 1, max_attempts, e, backoff,
+                )
+                time.sleep(backoff)
                 continue
-            raise
+            # All retries exhausted — use fallback transition
+            logger.warning(
+                "generate_interstitial failed after %d attempts. Using fallback.",
+                max_attempts,
+            )
+            return "Moving on."
 
 
 # ---------------------------------------------------------------------------
