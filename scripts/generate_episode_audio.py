@@ -322,7 +322,7 @@ def load_segments(episode_dir: Path, episode_date: str) -> list[tuple[str, str, 
     paragraph-level sub-segments for better TTS quality.
 
     Intro and outro are loaded as single segments.
-    Scripts are split into paragraph sub-segments (e.g., 01_-_script_01_p0, _p1, ...).
+    Scripts are split into paragraph sub-segments (e.g., 01_-_script_01_p00, _p01, ...).
     Interstitials are loaded as single segments.
     
     Also applies preamble stripping to intro/outro to catch LLM chain-of-thought leakage.
@@ -357,7 +357,7 @@ def load_segments(episode_dir: Path, episode_date: str) -> list[tuple[str, str, 
                 segments.append((seg_name, paragraphs[0], seg_name))
             else:
                 for pi, para in enumerate(paragraphs):
-                    sub_name = f"{seg_name}_p{pi}"
+                    sub_name = f"{seg_name}_p{pi:02d}"
                     segments.append((sub_name, para, seg_name))
         else:
             # Interstitials stay as single segments
