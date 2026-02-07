@@ -388,7 +388,8 @@ class EpisodeScaffold:
             '  - Do NOT use "Let that sink in"\n'
             '  - LIMIT "Not X, not Y, but Z" / "Not X. Not Y." patterns to MAX 1-2 per episode total\n'
             '  - LIMIT list-of-negations style ("it\'s not A, it\'s not B, it\'s not C") to 1 per episode\n'
-            '  - Avoid preachy/adversarial framing — celebrate wins, don\'t lecture'
+            '  - PREACHY ALLOWANCE: MAX 1 story per episode can be preachy (only the most egregious). Default is celebration.\n'
+            '  - If this story doesn\'t warrant the sermon, skip it — joy over moralizing'
         )
         return "\n\n".join(parts)
 
