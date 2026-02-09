@@ -305,7 +305,7 @@ def run_episode_pipeline(
         Dict with episode metadata and file paths
     """
     if episode_date is None:
-        episode_date = datetime.now().strftime("%Y-%m-%d-%H%M")
+        episode_date = datetime.now().strftime("%Y-%m-%d")
 
     episode_dir = get_episode_dir(episode_date)
 
