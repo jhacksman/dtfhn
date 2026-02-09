@@ -64,6 +64,29 @@ STORIES_SCHEMA = pa.schema([
 ])
 
 
+PIPELINE_STATE_SCHEMA = pa.schema([
+    pa.field("episode_date", pa.string()),          # PK: "2026-02-08" (DATE ONLY)
+    pa.field("phase", pa.string()),                 # Current phase: fetch/scripts/tts/assembly/upload/complete
+    pa.field("stories_fetched", pa.int32()),
+    pa.field("scripts_generated", pa.int32()),
+    pa.field("interstitials_generated", pa.int32()),
+    pa.field("intro_generated", pa.bool_()),
+    pa.field("outro_generated", pa.bool_()),
+    pa.field("segments_rendered", pa.int32()),
+    pa.field("segments_total", pa.int32()),
+    pa.field("segments_failed", pa.string()),        # JSON list of failed segment names
+    pa.field("episode_assembled", pa.bool_()),
+    pa.field("episode_uploaded", pa.bool_()),
+    pa.field("feed_updated", pa.bool_()),
+    pa.field("site_deployed", pa.bool_()),
+    pa.field("notified", pa.bool_()),
+    pa.field("started_at", pa.string()),
+    pa.field("updated_at", pa.string()),
+    pa.field("error_log", pa.string()),
+    pa.field("schema_version", pa.int32()),
+])
+
+
 SEGMENTS_SCHEMA = pa.schema([
     # Identity
     pa.field("id", pa.string()),                    # "YYYY-MM-DD-intro", "YYYY-MM-DD-script-01", etc.
@@ -104,6 +127,14 @@ def _table_names(db) -> list[str]:
         return result.tables
     # Older versions return list[str] directly
     return list(result)
+
+def get_pipeline_state_table() -> lancedb.table.Table:
+    """Get or create the pipeline_state table."""
+    db = get_db()
+    if "pipeline_state" in _table_names(db):
+        return db.open_table("pipeline_state")
+    return db.create_table("pipeline_state", schema=PIPELINE_STATE_SCHEMA)
+
 
 def get_episodes_table() -> lancedb.table.Table:
     """Get or create the episodes table."""
@@ -710,6 +741,84 @@ def get_episode_segments(episode_date: str) -> list[dict]:
     ).limit(100).to_list()
 
     return sorted(results, key=lambda x: x.get("position", 0))
+
+
+# ============================================================================
+# Pipeline State CRUD
+# ============================================================================
+
+def get_pipeline_state(episode_date: str) -> Optional[dict]:
+    """Get pipeline state for an episode date."""
+    table = get_pipeline_state_table()
+    safe_date = episode_date.replace("'", "''")
+    results = table.search().where(
+        f"episode_date = '{safe_date}'", prefilter=True
+    ).limit(10).to_list()
+    if not results:
+        return None
+    # Return most recent (LanceDB appends, so last is latest)
+    return sorted(results, key=lambda x: x.get("updated_at", ""))[-1]
+
+
+def upsert_pipeline_state(episode_date: str, **kwargs) -> None:
+    """
+    Create or update pipeline state for an episode date.
+    
+    LanceDB doesn't support true updates, so this appends a new row.
+    get_pipeline_state() returns the latest by updated_at.
+    """
+    table = get_pipeline_state_table()
+    existing = get_pipeline_state(episode_date)
+    
+    now = datetime.now().isoformat()
+    
+    if existing:
+        # Merge existing with updates
+        record = {
+            "episode_date": episode_date,
+            "phase": kwargs.get("phase", existing.get("phase", "fetch")),
+            "stories_fetched": kwargs.get("stories_fetched", existing.get("stories_fetched", 0)),
+            "scripts_generated": kwargs.get("scripts_generated", existing.get("scripts_generated", 0)),
+            "interstitials_generated": kwargs.get("interstitials_generated", existing.get("interstitials_generated", 0)),
+            "intro_generated": kwargs.get("intro_generated", existing.get("intro_generated", False)),
+            "outro_generated": kwargs.get("outro_generated", existing.get("outro_generated", False)),
+            "segments_rendered": kwargs.get("segments_rendered", existing.get("segments_rendered", 0)),
+            "segments_total": kwargs.get("segments_total", existing.get("segments_total", 0)),
+            "segments_failed": kwargs.get("segments_failed", existing.get("segments_failed", "[]")),
+            "episode_assembled": kwargs.get("episode_assembled", existing.get("episode_assembled", False)),
+            "episode_uploaded": kwargs.get("episode_uploaded", existing.get("episode_uploaded", False)),
+            "feed_updated": kwargs.get("feed_updated", existing.get("feed_updated", False)),
+            "site_deployed": kwargs.get("site_deployed", existing.get("site_deployed", False)),
+            "notified": kwargs.get("notified", existing.get("notified", False)),
+            "started_at": existing.get("started_at", now),
+            "updated_at": now,
+            "error_log": kwargs.get("error_log", existing.get("error_log", "")),
+            "schema_version": SCHEMA_VERSION,
+        }
+    else:
+        record = {
+            "episode_date": episode_date,
+            "phase": kwargs.get("phase", "fetch"),
+            "stories_fetched": kwargs.get("stories_fetched", 0),
+            "scripts_generated": kwargs.get("scripts_generated", 0),
+            "interstitials_generated": kwargs.get("interstitials_generated", 0),
+            "intro_generated": kwargs.get("intro_generated", False),
+            "outro_generated": kwargs.get("outro_generated", False),
+            "segments_rendered": kwargs.get("segments_rendered", 0),
+            "segments_total": kwargs.get("segments_total", 0),
+            "segments_failed": kwargs.get("segments_failed", "[]"),
+            "episode_assembled": kwargs.get("episode_assembled", False),
+            "episode_uploaded": kwargs.get("episode_uploaded", False),
+            "feed_updated": kwargs.get("feed_updated", False),
+            "site_deployed": kwargs.get("site_deployed", False),
+            "notified": kwargs.get("notified", False),
+            "started_at": now,
+            "updated_at": now,
+            "error_log": kwargs.get("error_log", ""),
+            "schema_version": SCHEMA_VERSION,
+        }
+    
+    table.add([record])
 
 
 # ============================================================================
