@@ -22,7 +22,7 @@ from pathlib import Path
 # TTS server config (quato)
 TTS_URL = "http://192.168.0.134:7849/speak"
 TTS_STATUS_URL = "http://192.168.0.134:7849/status"
-TTS_TIMEOUT = 3600  # 1 hour — connections wait in server queue until processed
+TTS_TIMEOUT = 300  # 5 min — generous per-request timeout to catch runaway generation
 
 # Character → TTS voice mapping
 CHARACTER_TTS_VOICES = {
@@ -469,7 +469,7 @@ def text_to_speech_parallel(
     segments: list[tuple[str, str]],
     output_dir: Path,
     voice: str = TTS_VOICE,
-    max_workers: int = 25,
+    max_workers: int = 1,
 ) -> tuple[list[Path], dict[str, str]]:
     """
     Generate all WAVs in parallel.
@@ -668,7 +668,7 @@ def text_to_speech_parallel_robust(
     segments: list[tuple[str, str]],
     output_dir: Path,
     voice: str = TTS_VOICE,
-    max_workers: int = 25,
+    max_workers: int = 1,
     skip_existing: bool = True,
     abort_on_queue: bool = True,
     retry_backoff: float = 2.0,

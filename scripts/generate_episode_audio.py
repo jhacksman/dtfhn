@@ -731,6 +731,7 @@ def main():
                 wav_dir,
                 skip_existing=True,
                 abort_on_queue=False,  # Already checked manually above
+                max_workers=6,  # 3 GPUs × 2 queue depth
             )
             tts_time = (datetime.now() - start_time).total_seconds()
             print(f"TTS completed in {tts_time:.1f}s ({len(wav_files)} files)")
