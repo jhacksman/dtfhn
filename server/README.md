@@ -1,6 +1,7 @@
 # Qwen3-TTS API Server
 
 A multi-GPU FastAPI server for Qwen3-TTS voice cloning with job tracking, cancellation, timeouts, and intelligent load balancing.
+Also supports default Qwen3-TTS CustomVoice speakers when the CustomVoice checkpoint is installed.
 
 ## Features
 
@@ -8,6 +9,7 @@ A multi-GPU FastAPI server for Qwen3-TTS voice cloning with job tracking, cancel
 - **Job tracking** - Monitor, list, and cancel jobs
 - **Timeouts** - Per-request and global timeout configuration
 - **Voice cloning** - Use custom voice profiles with reference audio
+- **Default voices (CustomVoice)** - Built-in speakers like `aiden`, `ryan` when CustomVoice weights are installed
 - **Queue management** - Flush GPU queues, cancel individual jobs
 
 ## Prerequisites
@@ -22,6 +24,10 @@ A multi-GPU FastAPI server for Qwen3-TTS voice cloning with job tracking, cancel
    ```bash
    # Using huggingface-cli
    huggingface-cli download Qwen/Qwen3-TTS-12Hz-1.7B-Base --local-dir Qwen3-TTS-12Hz-1.7B-Base
+   ```
+   Optional (for default speakers + `instruct`):
+   ```bash
+   huggingface-cli download Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice --local-dir Qwen3-TTS-12Hz-1.7B-CustomVoice
    ```
 
 3. **Dependencies**:
@@ -64,17 +70,18 @@ A multi-GPU FastAPI server for Qwen3-TTS voice cloning with job tracking, cancel
 ## Running the Server
 
 ```bash
-# Direct
+# Direct (development)
 python tts_api.py
 
-# With restart script
+# With restart script (production)
 ./restart.sh
-
-# With custom timeout (default: 120s)
-TTS_TIMEOUT=180 python tts_api.py
 ```
 
-Server runs on `http://localhost:7849` by default.
+Server runs on `http://localhost:7849` by default. On quato it is managed as a
+systemd **user** service named `qwen-tts.service` and `restart.sh` calls:
+`systemctl --user restart qwen-tts.service`.
+
+Logs (systemd): `journalctl --user -u qwen-tts.service`
 
 ## API Endpoints
 
@@ -89,7 +96,11 @@ Content-Type: application/json
   "voice": "my_voice",
   "language": "English",
   "filename": "output.wav",
-  "timeout": 120
+  "timeout": 120,
+  "instruct": "Calm, reassuring, low energy.",
+  "temperature": 0.9,
+  "top_p": 0.95,
+  "max_new_tokens": 2048
 }
 ```
 
@@ -153,6 +164,15 @@ python tts_pipeline.py --voice <voice_name> --rebuild
 
 This creates `prompt.pkl` which the API server uses for fast inference.
 
+## Default Voices (CustomVoice)
+
+If `Qwen3-TTS-12Hz-*-CustomVoice` is installed, `/voices` will include built-in
+speaker IDs like:
+`aiden`, `ryan`, `vivian`, `serena`, `uncle_fu`, `dylan`, `eric`, `ono_anna`, `sohee`.
+
+These are **not** files in `voices/`. They are built into the CustomVoice model.
+For these voices, the API uses `generate_custom_voice` and supports `instruct`.
+
 ## GPU Configuration
 
 The server is configured via constants at the top of `tts_api.py`:
@@ -174,7 +194,7 @@ The server will load one model instance and process requests sequentially.
 ### Multi-GPU Setup
 
 With multiple GPUs, the server:
-- Loads a separate model instance on each GPU at startup
+- Loads models lazily on first request for each GPU
 - Routes requests to the GPU with the shortest queue (least-queued dispatch)
 - Processes requests in parallel across GPUs
 
@@ -210,6 +230,9 @@ Remove the `attn_implementation` line entirely.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `TTS_TIMEOUT` | `120` | Default generation timeout in seconds |
+| `TTS_IDLE_UNLOAD_SECONDS` | `3600` | Unload models after this many idle seconds |
+| `TTS_CUSTOM_VOICE_MODEL_PATH` | `Qwen3-TTS-12Hz-1.7B-CustomVoice` | Path to CustomVoice weights |
+| `TTS_CUSTOM_VOICE_ENABLED` | `1` | Set `0` to disable default voices |
 
 ## Example Client
 
