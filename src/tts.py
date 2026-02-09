@@ -22,7 +22,7 @@ from pathlib import Path
 # TTS server config (quato)
 TTS_URL = "http://192.168.0.134:7849/speak"
 TTS_STATUS_URL = "http://192.168.0.134:7849/status"
-TTS_TIMEOUT = 300  # 5 min — generous per-request timeout to catch runaway generation
+TTS_TIMEOUT = 1200  # 20 min — Qwen3-TTS is slow (~1.7x realtime), longer segments need more time
 
 # Character → TTS voice mapping
 CHARACTER_TTS_VOICES = {
@@ -399,7 +399,7 @@ def text_to_speech(text: str, output_path: Path, voice: str = TTS_VOICE) -> tupl
             response = requests.post(
                 TTS_URL,
                 headers={"Content-Type": "application/json"},
-                json={"text": prepared_text, "voice": voice, "timeout": 0},
+                json={"text": prepared_text, "voice": voice, "timeout": 600},
                 timeout=(10, TTS_TIMEOUT),  # 10s connect, TTS_TIMEOUT read — detect dead server fast
             )
             

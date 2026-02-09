@@ -115,7 +115,8 @@ def phase_fetch(episode_date: str, episode_dir: Path, dry_run: bool = False) -> 
     stories = get_stories_by_date(episode_date)
     if len(stories) >= 10:
         log(f"SKIP fetch: {len(stories)} stories already exist for {episode_date}")
-        upsert_pipeline_state(episode_date, phase="fetch", stories_fetched=len(stories))
+        if not dry_run:
+            upsert_pipeline_state(episode_date, phase="fetch", stories_fetched=len(stories))
         return True
 
     if dry_run:
@@ -364,9 +365,11 @@ def run_pipeline(episode_date: str, dry_run: bool = False):
     state = get_pipeline_state(episode_date)
     if state:
         log(f"Resuming from phase: {state.get('phase', 'unknown')}")
-    else:
+    elif not dry_run:
         upsert_pipeline_state(episode_date, phase="fetch")
         log("Starting new pipeline run")
+    else:
+        log("Starting new pipeline run (dry-run, no DB writes)")
 
     try:
         # Phase 1: Fetch
@@ -401,7 +404,8 @@ def run_pipeline(episode_date: str, dry_run: bool = False):
         phase_upload(episode_date, episode_dir, dry_run)
 
         # Mark complete
-        upsert_pipeline_state(episode_date, phase="complete")
+        if not dry_run:
+            upsert_pipeline_state(episode_date, phase="complete")
         log(f"=== PIPELINE COMPLETE: {episode_date} ===")
 
         if not dry_run:
