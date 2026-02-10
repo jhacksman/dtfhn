@@ -269,71 +269,118 @@ def find_existing_segment_mp3s(
     return existing, missing
 
 
-def split_into_paragraphs(text: str, min_words: int = 20) -> list[str]:
+def split_into_paragraphs(text: str, min_words: int = 20) -> tuple[list[str], list[bool]]:
     """
-    Split script text into TTS chunks using a fixed grouping pattern.
+    Split script text into TTS chunks, respecting [pause] markers as hard breaks.
     
-    For 5-paragraph scripts (the standard):
-      - Chunk 0: paragraphs 1+2 together
-      - Chunk 1: paragraphs 3+4 together
-      - Chunk 2: paragraph 5 alone
+    [pause] markers create mandatory segment boundaries with longer silence gaps.
+    Regular paragraph breaks (\n\n) use the standard grouping/pairing logic.
     
-    For other counts, pairs paragraphs and leaves the last one solo if odd.
-    Short paragraphs (< min_words) merge into previous chunk.
+    For paragraphs within a [pause] section, uses fixed grouping:
+      - Pairs paragraphs (1+2), (3+4), last solo if odd
+      - Short paragraphs (< min_words) merge into previous chunk
     
     Args:
-        text: Full segment text
+        text: Full segment text (may contain [pause] markers)
         min_words: Minimum words per chunk (shorter ones merge with previous)
     
     Returns:
-        List of text chunks, each suitable for a TTS job
+        Tuple of:
+          - List of text chunks, each suitable for a TTS job
+          - List of booleans (len = len(chunks) - 1): True if the boundary
+            between chunk[i] and chunk[i+1] is a [pause] break (gets 0.75s
+            silence), False for a normal paragraph break (gets 0.5s silence)
     """
-    raw_paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
-    if len(raw_paragraphs) <= 1:
-        return raw_paragraphs or [text.strip()]
+    import re
     
-    # Merge very short paragraphs into previous first
-    merged = [raw_paragraphs[0]]
-    for p in raw_paragraphs[1:]:
-        if len(p.split()) < min_words and merged:
-            merged[-1] = merged[-1] + "\n\n" + p
+    # Split on [pause] markers first — these are hard boundaries
+    # Strip the literal [pause] text so TTS never sees it
+    pause_sections = re.split(r'\[pause\]', text)
+    
+    all_chunks = []
+    pause_boundaries = []  # True at boundaries that came from [pause]
+    
+    for si, section in enumerate(pause_sections):
+        section = section.strip()
+        if not section:
+            continue
+        
+        # Split this section into paragraphs
+        raw_paragraphs = [p.strip() for p in section.split("\n\n") if p.strip()]
+        if not raw_paragraphs:
+            continue
+        
+        if len(raw_paragraphs) == 1:
+            section_chunks = raw_paragraphs
         else:
-            merged.append(p)
+            # Merge very short paragraphs into previous first
+            merged = [raw_paragraphs[0]]
+            for p in raw_paragraphs[1:]:
+                if len(p.split()) < min_words and merged:
+                    merged[-1] = merged[-1] + "\n\n" + p
+                else:
+                    merged.append(p)
+            
+            # Pair: (1+2), (3+4), last solo — generalized for any count
+            section_chunks = []
+            i = 0
+            while i < len(merged):
+                if i + 1 < len(merged) and i + 2 <= len(merged) - 1:
+                    section_chunks.append(merged[i] + "\n\n" + merged[i + 1])
+                    i += 2
+                else:
+                    section_chunks.append(merged[i])
+                    i += 1
+        
+        # Record boundary types for chunks within this section (paragraph breaks)
+        for _ in range(len(section_chunks) - 1):
+            if all_chunks:  # Not first chunk overall — this is a paragraph boundary
+                pause_boundaries.append(False)
+            elif len(all_chunks) == 0 and len(section_chunks) > 1:
+                pass  # Will be added in the inner loop below
+        
+        # If we already have chunks from a previous section, the boundary
+        # between the last existing chunk and the first of this section is a [pause]
+        if all_chunks and section_chunks:
+            pause_boundaries.append(True)  # [pause] boundary
+        
+        # Add paragraph boundaries between chunks within this section
+        for ci, chunk in enumerate(section_chunks):
+            all_chunks.append(chunk)
+            if ci < len(section_chunks) - 1:
+                pause_boundaries.append(False)  # Normal paragraph boundary
     
-    # Now pair: (1+2), (3+4), 5 solo — generalized for any count
-    chunks = []
-    i = 0
-    while i < len(merged):
-        if i + 1 < len(merged) and i + 2 <= len(merged) - 1:
-            # At least 2 remaining after this pair — combine pair
-            chunks.append(merged[i] + "\n\n" + merged[i + 1])
-            i += 2
-        else:
-            # Last one (or last two if only 2 remain) — solo
-            chunks.append(merged[i])
-            i += 1
+    if not all_chunks:
+        return [text.strip()], []
     
-    return chunks
+    return all_chunks, pause_boundaries
 
 
-def load_segments(episode_dir: Path, episode_date: str) -> list[tuple[str, str, str]]:
+def load_segments(episode_dir: Path, episode_date: str) -> tuple[list[tuple[str, str, str]], list[str]]:
     """
     Load all segments in order from manifest, splitting scripts into
     paragraph-level sub-segments for better TTS quality.
 
     Intro and outro are loaded as single segments.
     Scripts are split into paragraph sub-segments (e.g., 01_-_script_01_p00, _p01, ...).
+    [pause] markers in scripts create hard segment boundaries with longer silence.
     Interstitials are loaded as single segments.
     
     Also applies preamble stripping to intro/outro to catch LLM chain-of-thought leakage.
 
     Returns:
-        List of (segment_name, text, parent_segment_name) tuples.
-        parent_segment_name == segment_name for non-split segments.
+        Tuple of:
+          - List of (segment_name, text, parent_segment_name) tuples.
+            parent_segment_name == segment_name for non-split segments.
+          - List of boundary types (len = len(segments) - 1):
+            "pause" for [pause] breaks (0.75s silence)
+            "paragraph" for paragraph breaks within same parent (0.5s silence)
+            "major" for breaks between different parent segments (1.0s silence)
     """
     from src.generator import _strip_preamble
     
     segments = []
+    boundary_types = []  # One per gap between consecutive segments
 
     # Read manifest for segment order
     manifest_path = episode_dir / "manifest.json"
@@ -344,6 +391,10 @@ def load_segments(episode_dir: Path, episode_date: str) -> list[tuple[str, str, 
     for seg_name in manifest["segments"]:
         text = (episode_dir / f"{seg_name}.txt").read_text().strip()
         
+        # Major break before this segment (if not first)
+        if segments:
+            boundary_types.append("major")
+        
         # Strip preamble from intro only (outro's opening paragraph is valid content)
         if "intro" in seg_name:
             text = _strip_preamble(text)
@@ -351,19 +402,25 @@ def load_segments(episode_dir: Path, episode_date: str) -> list[tuple[str, str, 
         elif "outro" in seg_name:
             segments.append((seg_name, text, seg_name))
         elif "script" in seg_name:
-            # Split scripts into paragraph sub-segments
-            paragraphs = split_into_paragraphs(text)
+            # Split scripts into paragraph sub-segments, respecting [pause] markers
+            paragraphs, pause_boundaries = split_into_paragraphs(text)
             if len(paragraphs) == 1:
                 segments.append((seg_name, paragraphs[0], seg_name))
             else:
                 for pi, para in enumerate(paragraphs):
                     sub_name = f"{seg_name}_p{pi:02d}"
                     segments.append((sub_name, para, seg_name))
+                    # Add boundary type between sub-segments
+                    if pi < len(paragraphs) - 1:
+                        if pi < len(pause_boundaries) and pause_boundaries[pi]:
+                            boundary_types.append("pause")
+                        else:
+                            boundary_types.append("paragraph")
         else:
             # Interstitials stay as single segments
             segments.append((seg_name, text, seg_name))
 
-    return segments
+    return segments, boundary_types
 
 
 def build_segment_metadata(
@@ -688,7 +745,7 @@ def main():
         
         # Load all segments (scripts split into paragraph sub-segments)
         print("Loading segments...")
-        segments_with_parent = load_segments(episode_dir, episode_date)
+        segments_with_parent, boundary_types = load_segments(episode_dir, episode_date)
         print(f"Loaded {len(segments_with_parent)} TTS segments:")
         for name, text, parent in segments_with_parent:
             words = len(text.split())
@@ -792,16 +849,30 @@ def main():
         
         # Stitch segment MP3s with variable silence:
         #   0.5s between paragraph sub-segments (within a script)
+        #   0.75s at [pause] markers (dramatic pause within a script)
         #   1.0s between major segments (intro→script, script→interstitial, etc.)
         print("Stitching segment MP3s with variable silence gaps...")
         silence_map = []  # silence duration AFTER each segment (except last)
+        SILENCE_PARAGRAPH = 0.5
+        SILENCE_PAUSE = 0.75
+        SILENCE_MAJOR = 1.0
         for i in range(len(segments_with_parent) - 1):
-            _, _, parent_curr = segments_with_parent[i]
-            _, _, parent_next = segments_with_parent[i + 1]
-            if parent_curr == parent_next:
-                silence_map.append(0.5)  # Same parent = paragraph break
+            if i < len(boundary_types):
+                bt = boundary_types[i]
+                if bt == "pause":
+                    silence_map.append(SILENCE_PAUSE)
+                elif bt == "major":
+                    silence_map.append(SILENCE_MAJOR)
+                else:
+                    silence_map.append(SILENCE_PARAGRAPH)
             else:
-                silence_map.append(1.0)  # Different parent = major break
+                # Fallback: infer from parent relationship
+                _, _, parent_curr = segments_with_parent[i]
+                _, _, parent_next = segments_with_parent[i + 1]
+                if parent_curr == parent_next:
+                    silence_map.append(SILENCE_PARAGRAPH)
+                else:
+                    silence_map.append(SILENCE_MAJOR)
         
         episode_mp3 = episode_dir / f"DTFHN-{episode_date}.mp3"
         if not stitch_mp3s_variable(segment_mp3_files, episode_mp3, silence_map, bitrate="192k"):
