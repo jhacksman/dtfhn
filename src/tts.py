@@ -192,8 +192,52 @@ def merge_wavs_with_silence(
 # Robust TTS pipeline configuration
 POLL_INTERVAL_SECONDS = 5  # How often to poll /status
 PROGRESS_TIMEOUT_SECONDS = 300  # 5 min with no progress = stall
-MAX_RETRY_ATTEMPTS = 3  # Max times to retry failed segments
+MAX_RETRY_ATTEMPTS = 5  # Max times to retry failed segments
 MIN_WAV_SIZE_BYTES = 1000  # Minimum valid WAV file size
+RETRY_BACKOFF_SCHEDULE = [10, 20, 40, 80, 120]  # seconds per retry round
+MASS_FAILURE_THRESHOLD = 3  # re-warmup if more than this many fail in a round
+
+TTS_BASE_URL = "http://192.168.0.134:7849"
+
+
+def warmup_tts_server(max_wait: int = 180) -> bool:
+    """Send a health check + test TTS request to wake the server from cold start.
+    
+    The TTS server unloads models after 1hr idle. First request after idle
+    takes ~2 min for model reload. This function ensures the model is loaded
+    before we fire off parallel TTS jobs.
+    
+    Retries every 10s for up to max_wait seconds.
+    """
+    import json as _json
+    start = time.time()
+    attempt = 0
+    while time.time() - start < max_wait:
+        attempt += 1
+        try:
+            # Health check first
+            resp = requests.get(f"{TTS_BASE_URL}/", timeout=15)
+            if resp.status_code == 200:
+                # Server is up — send a tiny TTS request to force model load
+                try:
+                    test_resp = requests.post(
+                        TTS_URL,
+                        json={"text": "test", "voice": TTS_VOICE, "timeout": 0},
+                        timeout=300,
+                    )
+                    if test_resp.status_code == 200 and len(test_resp.content) > 100:
+                        print(f"  TTS warmup OK (attempt {attempt}, {time.time()-start:.0f}s)")
+                        return True
+                    else:
+                        print(f"  TTS warmup: unexpected response {test_resp.status_code}, retrying...")
+                except Exception as e:
+                    print(f"  TTS warmup request failed (attempt {attempt}): {e}")
+        except Exception as e:
+            print(f"  TTS server not ready (attempt {attempt}): {e}")
+        time.sleep(10)
+    
+    print(f"  TTS warmup FAILED after {max_wait}s")
+    return False
 
 
 def prepare_text_for_tts(text: str) -> str:
@@ -730,12 +774,17 @@ def text_to_speech_parallel_robust(
     # Track all failure reasons for final report
     all_failures: dict[str, str] = {}
     
-    # SUBMIT & RETRY: Fire all requests with retry support
+    # SUBMIT & RETRY: Fire all requests with exponential backoff
     for attempt in range(MAX_RETRY_ATTEMPTS):
         if attempt > 0:
-            backoff_time = retry_backoff * (2 ** (attempt - 1))
-            print(f"Retry attempt {attempt + 1}/{MAX_RETRY_ATTEMPTS} after {backoff_time:.1f}s backoff...")
+            backoff_time = RETRY_BACKOFF_SCHEDULE[min(attempt - 1, len(RETRY_BACKOFF_SCHEDULE) - 1)]
+            print(f"Retry round {attempt + 1}/{MAX_RETRY_ATTEMPTS} after {backoff_time}s backoff...")
             time.sleep(backoff_time)
+            
+            # Re-warmup if many failures (server might be restarting/cold)
+            if len(to_generate) > MASS_FAILURE_THRESHOLD:
+                print(f"  {len(to_generate)} failures — re-warming TTS server...")
+                warmup_tts_server(max_wait=120)
         
         # Generate missing segments
         wav_files, failures = text_to_speech_parallel(to_generate, output_dir, voice, max_workers)

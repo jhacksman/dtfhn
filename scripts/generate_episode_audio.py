@@ -36,7 +36,7 @@ from datetime import datetime
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.tts import text_to_speech_parallel_robust, check_tts_status, TTS_STATUS_URL
+from src.tts import text_to_speech_parallel_robust, check_tts_status, TTS_STATUS_URL, warmup_tts_server
 from src.audio import (
     stitch_wavs, transcode_to_mp3, get_audio_duration, cleanup_wav_files,
     generate_silence_wav, transcode_segment_to_mp3, validate_segment_mp3,
@@ -722,6 +722,12 @@ def main():
             
             # Create temp directory for WAVs
             wav_dir.mkdir(exist_ok=True)
+            
+            # Warmup TTS server (handles cold start — model reload takes ~2 min)
+            print("Warming up TTS server...")
+            if not warmup_tts_server(max_wait=180):
+                print("WARNING: TTS warmup failed, proceeding anyway...")
+            print()
             
             # Generate TTS for missing segments
             print(f"Generating TTS for {len(segments_to_generate)} segments (parallel to 3 GPUs)...")
