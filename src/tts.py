@@ -201,15 +201,15 @@ TTS_BASE_URL = "http://192.168.0.134:7849"
 
 
 def warmup_tts_server(max_wait: int = 180) -> bool:
-    """Send a health check + test TTS request to wake the server from cold start.
+    """Send health check + test TTS requests to wake the server from cold start.
     
     The TTS server unloads models after 1hr idle. First request after idle
-    takes ~2 min for model reload. This function ensures the model is loaded
-    before we fire off parallel TTS jobs.
+    takes ~2 min for model reload per GPU. This function sends 3 concurrent
+    warmup requests to force model loading on all GPUs (least-queued dispatch
+    means 3 sequential requests hit 3 different GPUs).
     
     Retries every 10s for up to max_wait seconds.
     """
-    import json as _json
     start = time.time()
     attempt = 0
     while time.time() - start < max_wait:
@@ -218,18 +218,29 @@ def warmup_tts_server(max_wait: int = 180) -> bool:
             # Health check first
             resp = requests.get(f"{TTS_BASE_URL}/", timeout=15)
             if resp.status_code == 200:
-                # Server is up — send a tiny TTS request to force model load
-                try:
-                    test_resp = requests.post(
+                # Send 3 concurrent tiny TTS requests to warm all GPUs
+                # (least-queued dispatch distributes them across GPUs)
+                from concurrent.futures import ThreadPoolExecutor as _TPE, as_completed as _ac
+                
+                def _warmup_one(i):
+                    r = requests.post(
                         TTS_URL,
-                        json={"text": "test", "voice": TTS_VOICE, "timeout": 0},
+                        json={"text": f"warmup test {i}", "voice": TTS_VOICE, "timeout": 0},
                         timeout=300,
                     )
-                    if test_resp.status_code == 200 and len(test_resp.content) > 100:
-                        print(f"  TTS warmup OK (attempt {attempt}, {time.time()-start:.0f}s)")
+                    return r.status_code, len(r.content)
+                
+                try:
+                    with _TPE(max_workers=3) as pool:
+                        futures = [pool.submit(_warmup_one, i) for i in range(3)]
+                        results = [f.result() for f in _ac(futures)]
+                    
+                    successes = sum(1 for code, size in results if code == 200 and size > 100)
+                    if successes >= 1:
+                        print(f"  TTS warmup OK: {successes}/3 GPUs ready (attempt {attempt}, {time.time()-start:.0f}s)")
                         return True
                     else:
-                        print(f"  TTS warmup: unexpected response {test_resp.status_code}, retrying...")
+                        print(f"  TTS warmup: 0/3 succeeded, retrying...")
                 except Exception as e:
                     print(f"  TTS warmup request failed (attempt {attempt}): {e}")
         except Exception as e:
