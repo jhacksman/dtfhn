@@ -611,6 +611,7 @@ A single extended metaphor is fine. Let the story dictate the shape.
 Write ONLY the script text. No preamble, no commentary, no markdown.
 Write in spoken voice — this will be read aloud by TTS.
 Do NOT include stage directions, asterisks, or formatting of any kind.
+Do NOT write a story number or header line (e.g. "Story seven. Title."). The header is added automatically by the pipeline. Start directly with your content.
 
 Write the script now."""
 
@@ -741,6 +742,11 @@ def generate_interstitial(
     ]
     style = random.choice(transition_styles)
 
+    # Build story number context if available
+    story_num_context = ""
+    if current_story_num and next_story_num:
+        story_num_context = f"\nYou are transitioning from story {current_story_num} to story {next_story_num}. If you reference a story number, use EXACTLY these numbers.\n"
+
     prompt = f"""## CHARACTER VOICE
 {voice}
 
@@ -748,7 +754,7 @@ def generate_interstitial(
 
 ## TASK
 Write a 1-2 sentence transition between podcast segments.
-
+{story_num_context}
 PREVIOUS SEGMENT (just finished):
 {script1[-500:]}
 
@@ -1151,6 +1157,17 @@ def sanitize_llm_output(text: str) -> str:
             logger.info("Stripped preamble before '---' separator (%d chars)", len(before_sep) + 4)
             text = after_sep
             lines = text.splitlines()
+
+    # --- Phase 1b: Strip LLM-generated story header lines at the start ---
+    # The pipeline adds its own headers; LLM sometimes generates duplicates like
+    # "Story seven. Title Goes Here."
+    _story_header_re = re.compile(r"^Story\s+\w+[\.\:].*", re.IGNORECASE)
+    while lines and _story_header_re.match(lines[0].strip()):
+        logger.info("Stripped LLM story header: %s", lines[0].strip()[:80])
+        lines = lines[1:]
+    # Also strip any blank lines that followed the header
+    while lines and not lines[0].strip():
+        lines = lines[1:]
 
     # --- Phase 2: Strip leading preamble lines ---
     start = 0
