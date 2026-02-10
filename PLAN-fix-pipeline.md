@@ -82,6 +82,23 @@ After fixes, re-generate today's episode text (dry run):
 - `src/generator.py` (fixes 1, 2)
 - `scripts/generate_episode_audio.py` (fixes 3, 4, 5)
 
+## Results — 2026-02-10 Script Fixes
+
+**Fix 1 (LLM story headers): ✅ FIXED**
+- Added prompt instruction: "Do NOT write a story number or header line"
+- Added regex strip in `sanitize_llm_output()` Phase 1b for `^Story \w+[\.\:].*` lines
+- Test result: All 10 stories have exactly one header (pipeline-generated), zero LLM duplicates
+
+**Fix 2 (Interstitial story numbers): ✅ FIXED**
+- Added `current_story_num` and `next_story_num` to the interstitial prompt
+- Test result: Interstitials that mention story numbers use correct 1-based numbers (e.g. "Story six" for story 6, not "Story twelve")
+
+**Test run:** 10 scripts (4032 words), 9 interstitials (1 fallback due to empty LLM output), intro, outro all generated successfully. Output saved to `/tmp/dtfhn-test-episode.txt` and sent via Telegram.
+
+**Commit:** `bc55206` — "fix: strip LLM story headers, pass story nums to interstitials"
+
+**Remaining:** Fixes 3-5 (voice config, [pause] splitting, TTS resilience) in `generate_episode_audio.py` — separate task.
+
 ## Notes
 - stories.json has no `position` field — `s["position"]` returns None at pipeline.py:378
   This is benign for the script generator (doesn't use it) but should be fixed for data integrity
