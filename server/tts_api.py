@@ -15,6 +15,7 @@ import asyncio
 import logging
 import time
 import itertools
+import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
@@ -25,6 +26,7 @@ import uvicorn
 from concurrent.futures import ThreadPoolExecutor, Future
 from transformers import StoppingCriteria, StoppingCriteriaList
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("tts_api")
 
 
@@ -53,12 +55,21 @@ class TimeoutCriteria(StoppingCriteria):
 
 VOICES_DIR = Path(__file__).parent / "voices"
 MODEL_PATH = Path(__file__).parent / "Qwen3-TTS-12Hz-1.7B-Base"
+CUSTOM_VOICE_MODEL_PATH = Path(
+    os.environ.get(
+        "TTS_CUSTOM_VOICE_MODEL_PATH",
+        str(Path(__file__).parent / "Qwen3-TTS-12Hz-1.7B-CustomVoice"),
+    )
+)
+CUSTOM_VOICE_ENABLED = os.environ.get("TTS_CUSTOM_VOICE_ENABLED", "1").lower() not in ("0", "false", "no")
+CUSTOM_VOICE_CONFIG_PATH = CUSTOM_VOICE_MODEL_PATH / "config.json"
 NUM_GPUS = 3
 DEFAULT_TIMEOUT = int(os.environ.get("TTS_TIMEOUT", "120"))
 
 # One single-thread executor per GPU — guarantees serial access, no locks needed.
 _gpu_executors: list[ThreadPoolExecutor] = []
 _models: list = [None] * NUM_GPUS
+_custom_models: list = [None] * NUM_GPUS
 _prompts: dict = {}
 
 # Status tracking — updated from both async and worker threads, so use threading lock.
@@ -80,8 +91,10 @@ class SpeakRequest(BaseModel):
     text: str
     voice: str = "george_carlin"
     language: str = "English"
+    instruct: str | None = None
     filename: str = "output.wav"
     timeout: int | None = Field(default=None, description="Per-request timeout in seconds (overrides TTS_TIMEOUT env var)")
+    non_streaming_mode: bool = True
 
 
 def load_model(gpu_id):
@@ -97,10 +110,73 @@ def load_model(gpu_id):
     return model
 
 
+def load_custom_model(gpu_id):
+    from qwen_tts import Qwen3TTSModel
+    if not CUSTOM_VOICE_ENABLED:
+        raise RuntimeError("Custom voice support disabled (TTS_CUSTOM_VOICE_ENABLED=0)")
+    if not CUSTOM_VOICE_MODEL_PATH.exists():
+        raise FileNotFoundError(f"Custom voice model not found at {CUSTOM_VOICE_MODEL_PATH}")
+    logger.info(f"Loading custom voice model on cuda:{gpu_id}...")
+    model = Qwen3TTSModel.from_pretrained(
+        str(CUSTOM_VOICE_MODEL_PATH),
+        device_map=f"cuda:{gpu_id}",
+        dtype=torch.bfloat16,
+        attn_implementation="flash_attention_2",
+    )
+    logger.info(f"Custom voice model loaded on cuda:{gpu_id}")
+    return model
+
+
 def get_model(gpu_id):
     if _models[gpu_id] is None:
         _models[gpu_id] = load_model(gpu_id)
     return _models[gpu_id]
+
+
+def get_custom_model(gpu_id):
+    if _custom_models[gpu_id] is None:
+        _custom_models[gpu_id] = load_custom_model(gpu_id)
+    return _custom_models[gpu_id]
+
+
+def _load_custom_speakers_from_config() -> set[str]:
+    if not CUSTOM_VOICE_CONFIG_PATH.exists():
+        return set()
+    try:
+        with open(CUSTOM_VOICE_CONFIG_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        spk_id = data.get("talker_config", {}).get("spk_id", {}) or {}
+        return {str(k).strip().lower() for k in spk_id.keys()}
+    except Exception:
+        logger.exception("Failed to load custom speakers from CustomVoice config")
+        return set()
+
+
+CUSTOM_SPEAKERS = _load_custom_speakers_from_config()
+
+
+def _normalize_voice_name(name: str) -> str:
+    return str(name).strip().lower()
+
+
+def _is_custom_voice(name: str) -> bool:
+    if not CUSTOM_VOICE_ENABLED:
+        return False
+    return _normalize_voice_name(name) in CUSTOM_SPEAKERS
+
+
+def list_clone_voices() -> list[str]:
+    voices = []
+    for d in VOICES_DIR.iterdir():
+        if d.is_dir() and (d / "prompt.pkl").exists():
+            voices.append(d.name)
+    return voices
+
+
+def list_custom_voices() -> list[str]:
+    if not CUSTOM_VOICE_ENABLED:
+        return []
+    return sorted(CUSTOM_SPEAKERS)
 
 
 def get_prompt(voice_name):
@@ -119,11 +195,8 @@ def get_prompt(voice_name):
     return _prompts[voice_name]
 
 
-def generate_on_gpu(gpu_id, text, voice, language, cancel_criteria=None, timeout_criteria=None):
+def generate_on_gpu(gpu_id, text, voice, language, cancel_criteria=None, timeout_criteria=None, instruct=None, non_streaming_mode=True):
     """Run TTS on a specific GPU. Called from that GPU's single-thread executor."""
-    model = get_model(gpu_id)
-    prompt = get_prompt(voice)
-
     criteria_list = []
     if cancel_criteria is not None:
         criteria_list.append(cancel_criteria)
@@ -137,12 +210,25 @@ def generate_on_gpu(gpu_id, text, voice, language, cancel_criteria=None, timeout
     if timeout_criteria is not None:
         timeout_criteria.start()
 
-    wavs, sr = model.generate_voice_clone(
-        text=text,
-        language=language,
-        voice_clone_prompt=prompt,
-        **extra_kwargs,
-    )
+    if _is_custom_voice(voice):
+        model = get_custom_model(gpu_id)
+        wavs, sr = model.generate_custom_voice(
+            text=text,
+            language=language,
+            speaker=voice,
+            instruct=instruct,
+            non_streaming_mode=non_streaming_mode,
+            **extra_kwargs,
+        )
+    else:
+        model = get_model(gpu_id)
+        prompt = get_prompt(voice)
+        wavs, sr = model.generate_voice_clone(
+            text=text,
+            language=language,
+            voice_clone_prompt=prompt,
+            **extra_kwargs,
+        )
 
     if timeout_criteria is not None and timeout_criteria.timed_out:
         raise TimeoutError(f"Generation timed out after {timeout_criteria.timeout_s}s")
@@ -199,16 +285,32 @@ app = FastAPI(title="TTS API", version="2.0", lifespan=lifespan)
 
 @app.get("/")
 def root():
-    return {"status": "ok", "gpus": NUM_GPUS, "voices": list_voices()}
+    return {
+        "status": "ok",
+        "gpus": NUM_GPUS,
+        "voices": list_voices(),
+        "clone_voices": list_clone_voices(),
+        "custom_voices": list_custom_voices(),
+    }
 
 
 @app.get("/voices")
 def list_voices():
-    voices = []
-    for d in VOICES_DIR.iterdir():
-        if d.is_dir() and (d / "prompt.pkl").exists():
-            voices.append(d.name)
+    voices = list_clone_voices()
+    for v in list_custom_voices():
+        if v not in voices:
+            voices.append(v)
     return voices
+
+
+@app.get("/voices/clones")
+def list_clone_voices_endpoint():
+    return list_clone_voices()
+
+
+@app.get("/voices/custom")
+def list_custom_voices_endpoint():
+    return list_custom_voices()
 
 
 @app.get("/status")
@@ -407,6 +509,8 @@ async def speak(req: SpeakRequest):
                 gpu_id, req.text, req.voice, req.language,
                 cancel_criteria=cancel_criteria,
                 timeout_criteria=timeout_criteria,
+                instruct=req.instruct,
+                non_streaming_mode=req.non_streaming_mode,
             )
             with _status_lock:
                 _active[gpu_id] = None
