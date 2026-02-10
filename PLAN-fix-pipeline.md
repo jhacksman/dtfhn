@@ -1,67 +1,88 @@
 # PLAN: Fix DTFHN Pipeline — 2026-02-10
 
-## Problems Identified
+## Root Cause Analysis
 
-### Bug 1: Voice hardcoded to `george_carlin`
-- `generate_episode_audio.py` lines 425 and 580 hardcode `"voice": "george_carlin"`
-- `CHARACTER_CONFIG` in `generator.py` correctly maps `jack` → `noel`
-- The audio generator never reads from config
+### The Script is Broken — 5 Bugs
 
-### Bug 2: Double story headers with wrong numbers
-- LLM generates its own "Story seven. Title." (hallucinated number)
-- `pipeline.py:512` prepends correct "Story one. Title." via `generate_story_header()`
-- Result: two headers per story, one with wrong number
-- The prompt (`generator.py:600+`) says "Write ONLY the script text" but never says "don't write a header"
+**Bug 1: LLM generates its own story headers with hallucinated numbers**
+- Pipeline prepends correct header via `generate_story_header(i+1, title)` in `pipeline.py:509-512`
+- LLM prompt (`generator.py:600+`) never says "don't write a header"
+- LLM generates "Story seven. Title." independently — hallucinated number
+- The +6 offset (story 1→"seven", story 2→"eight") suggests HN ranking position leaking
+  from comment text or the LLM's own confusion about article ordering
+- Result: TWO headers per story, one correct, one wrong
 
-### Bug 3: `[pause]` not splitting into separate TTS segments
-- `em_dash_to_pause()` converts em-dashes to `[pause]` — good
+**Bug 2: Interstitials reference wrong story numbers**
+- `generate_interstitial()` receives `current_story_num` and `next_story_num` (correct: 1-based)
+- But the LLM ignores them or hallucinates its own — interstitial after story 1 says "Story seven"
+- Need to check: is the interstitial prompt actually passing the story numbers?
+- Even if it does, the LLM needs explicit instruction: "Use these exact numbers"
+
+**Bug 3: Voice hardcoded to `george_carlin`**
+- `generate_episode_audio.py` lines 425 and 580: `"voice": "george_carlin"`
+- CHARACTER_CONFIG correctly maps `jack` → `noel`
+- Audio generator never reads from config
+
+**Bug 4: `[pause]` not splitting into TTS segments**
+- `em_dash_to_pause()` converts `—` to `[pause]` in generator output — good
 - `split_into_paragraphs()` splits on `\n\n` only
-- Inline `[pause]` stays as literal text, TTS reads "pause" aloud or garbles it
-- Should split on `[pause]` and insert silence between resulting clips
+- Standalone `[pause]` on its own line = already a paragraph break (works by accident)
+- Inline `[pause]` within a paragraph = passed as literal text to TTS (broken)
+- TTS either reads "pause" aloud or garbles it
 
-### Bug 4: TTS pipeline gives up too fast
+**Bug 5: TTS pipeline too fragile**
 - 3 retries with 2s/4s/8s backoff
-- TTS server cold start takes ~2 min, GPU hangs can last longer
-- Pipeline dies, episode doesn't ship
+- Dies on cold start (~2 min) or GPU hangs
+- Pipeline exits instead of persisting
 
 ## Fixes
 
-### Fix 1: Voice from config
+### Fix 1: Kill LLM story headers
+**File:** `src/generator.py` → `generate_script()` prompt
+**Change:** Add explicit instruction: "Do NOT write a story number, header, or title line. The header is added automatically. Start directly with the content."
+**Also:** Add post-processing regex in `sanitize_llm_output()` to strip any line matching `^Story \w+[\.\:].+` at the start of output
+
+### Fix 2: Fix interstitial story numbers
+**File:** `src/generator.py` → `generate_interstitial()` 
+**Check:** Verify `current_story_num` and `next_story_num` are passed to the LLM prompt
+**Change:** Make the prompt explicit: "You are transitioning from story {N} to story {N+1}. If you reference a story number, use EXACTLY these numbers."
+**Also:** Strip any hallucinated story headers from interstitial output too
+
+### Fix 3: Voice from config
 **File:** `scripts/generate_episode_audio.py`
-**Change:** Replace hardcoded `"voice": "george_carlin"` (lines 425, 580) with voice read from `get_character_config(character)["tts_voice"]`
-**How:** Import `get_character_config` from `src.generator`, pass character through, use `config["tts_voice"]`
+**Change:** Replace `"voice": "george_carlin"` on lines 425, 580 with voice read from `get_character_config()["tts_voice"]`
+**How:** Import `get_character_config` from `src.generator`, thread character name through
 
-### Fix 2: Strip LLM story headers
-**File:** `src/generator.py`
-**Changes:**
-1. Add to prompt (after "Write ONLY the script text"): `"Do NOT write a story number or header line. The header is added automatically by the pipeline."`
-2. Add post-processing in `sanitize_llm_output()`: strip lines matching `^Story \w+\..*` at the start of output (catch any the LLM still generates)
+### Fix 4: Split on `[pause]`
+**File:** `scripts/generate_episode_audio.py` → `split_into_paragraphs()` or `load_segments()`
+**Change:** After paragraph splitting, further split each chunk on `[pause]`
+- Strip `[pause]` from text before sending to TTS
+- Each `[pause]` boundary = new TTS segment with silence gap (same as paragraph gap)
+- Inline `[pause]` like `"extensions [pause] each one"` becomes two segments: `"extensions"` and `"each one"` with silence between
 
-### Fix 3: Split on `[pause]`
-**File:** `scripts/generate_episode_audio.py` → `load_segments()` / `split_into_paragraphs()`
-**Change:** After paragraph splitting, further split each paragraph on `[pause]`. Each `[pause]` boundary becomes a separate TTS segment with silence gap inserted during assembly.
-**Detail:**
-- `[pause]` on its own line (standalone) already works as paragraph break — verify this
-- Inline `[pause]` within text: split into two segments, strip `[pause]` from both
-- Silence gap between pause-split segments: same duration as paragraph gaps (currently 1s)
-
-### Fix 4: Patient TTS submission
+### Fix 5: Patient TTS
 **File:** `scripts/generate_episode_audio.py`
-**Change:** Replace parallel blast + 3 retries with:
-- Submit segments sequentially in batches of 3 (one per GPU)
-- `timeout=0` on each request (wait indefinitely)
+**Change:** Rewrite TTS submission:
+- Submit 3 segments at a time (one per GPU)
+- `timeout=0` per request (wait indefinitely)
 - On HTTP error: wait 60s, hit `/restart`, wait 120s for reload, retry
-- No max retry limit — runs until complete or manually killed
-- Skip existing WAV files (already implemented)
-- Log progress clearly: "Segment 14/51: story_04_p02 — rendering..."
+- No max retry limit — runs until complete or killed
+- Skip existing WAVs (already works)
+- Clear progress logging: "Segment 14/51: story_04_p02 — rendering..."
 
 ## Verification
-- Generate a test episode (dry run or use today's scripts)
-- Confirm: single correct story header per story
-- Confirm: voice is noel (not george_carlin)  
-- Confirm: `[pause]` markers produce silence gaps, not spoken text
-- Confirm: TTS resilience by checking it survives a `/restart` mid-run
+After fixes, re-generate today's episode text (dry run):
+1. Confirm: single correct header per story ("Story one." not "Story seven.")
+2. Confirm: interstitials reference correct story numbers
+3. Confirm: no `[pause]` literal text in any TTS segment
+4. Confirm: voice is `noel` in TTS requests
+5. Test TTS resilience: submit one segment, verify it completes
 
 ## Files Modified
-- `scripts/generate_episode_audio.py` (fixes 1, 3, 4)
-- `src/generator.py` (fix 2)
+- `src/generator.py` (fixes 1, 2)
+- `scripts/generate_episode_audio.py` (fixes 3, 4, 5)
+
+## Notes
+- stories.json has no `position` field — `s["position"]` returns None at pipeline.py:378
+  This is benign for the script generator (doesn't use it) but should be fixed for data integrity
+- The LLM's "+6" offset is likely from HN ranking context leaking through comment text
