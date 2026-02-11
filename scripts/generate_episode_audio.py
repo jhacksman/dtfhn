@@ -46,6 +46,7 @@ from src.storage import store_episode, store_segments_batch
 from src.chapters import embed_chapters, generate_chapters_json, load_stories_for_episode
 from src.metadata import embed_id3_metadata
 from src.pipeline import parse_segment_name
+from src.generator import get_character_config
 
 # TTS server base URL
 TTS_BASE_URL = "http://192.168.0.134:7849"
@@ -479,7 +480,7 @@ def build_segment_metadata(
             "story_position": story_pos,
             "next_story_position": next_story,
             "tts_model": "f5-tts",
-            "voice": "george_carlin",
+            "voice": get_character_config()["tts_voice"],
         })
         
         # Add duration + 1s silence gap (except after last segment)
@@ -634,7 +635,7 @@ def build_segment_metadata_from_subs(
             "story_position": story_pos,
             "next_story_position": next_story,
             "tts_model": "f5-tts",
-            "voice": "george_carlin",
+            "voice": get_character_config()["tts_voice"],
         })
         
         # Advance offset: total duration + silence to next parent segment
