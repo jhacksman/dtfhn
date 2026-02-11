@@ -191,11 +191,11 @@ def merge_wavs_with_silence(
 
 # Robust TTS pipeline configuration
 POLL_INTERVAL_SECONDS = 5  # How often to poll /status
-PROGRESS_TIMEOUT_SECONDS = 300  # 5 min with no progress = stall
-MAX_RETRY_ATTEMPTS = 5  # Max times to retry failed segments
+PROGRESS_TIMEOUT_SECONDS = 600  # 10 min stall before considering restart
 MIN_WAV_SIZE_BYTES = 1000  # Minimum valid WAV file size
-RETRY_BACKOFF_SCHEDULE = [10, 20, 40, 80, 120]  # seconds per retry round
-MASS_FAILURE_THRESHOLD = 3  # re-warmup if more than this many fail in a round
+RETRY_BACKOFF_SCHEDULE = [60, 60, 120, 120, 300]  # seconds per retry (repeat last forever)
+CONSECUTIVE_FAILURES_BEFORE_RESTART = 3  # restart TTS server after this many consecutive failures of same segment
+PROGRESS_REPORT_INTERVAL = 30  # seconds between progress reports
 
 TTS_BASE_URL = "http://192.168.0.134:7849"
 
@@ -249,6 +249,34 @@ def warmup_tts_server(max_wait: int = 180) -> bool:
     
     print(f"  TTS warmup FAILED after {max_wait}s")
     return False
+
+
+def restart_tts_server(wait_seconds: int = 120) -> bool:
+    """POST /restart to quato TTS, wait for reload, return success.
+    
+    After restart, sends 3 warmup requests to ensure all GPUs have
+    models loaded before returning.
+    
+    Args:
+        wait_seconds: Seconds to wait after restart for model reload
+    
+    Returns:
+        True if restart + warmup succeeded
+    """
+    print(f"  🔄 Sending POST /restart to TTS server...")
+    try:
+        resp = requests.post(f"{TTS_BASE_URL}/restart", timeout=30)
+        print(f"  /restart response: {resp.status_code}")
+    except Exception as e:
+        print(f"  /restart request failed: {e}")
+        # Continue anyway — server may be restarting
+    
+    print(f"  Waiting {wait_seconds}s for model reload on all 3 GPUs...")
+    time.sleep(wait_seconds)
+    
+    # Re-warmup with 3 test requests
+    print(f"  Re-warming TTS server after restart...")
+    return warmup_tts_server(max_wait=180)
 
 
 def prepare_text_for_tts(text: str) -> str:
@@ -723,34 +751,36 @@ def text_to_speech_parallel_robust(
     segments: list[tuple[str, str]],
     output_dir: Path,
     voice: str = TTS_VOICE,
-    max_workers: int = 1,
+    max_workers: int = 6,
     skip_existing: bool = True,
     abort_on_queue: bool = True,
-    retry_backoff: float = 2.0,
 ) -> tuple[list[Path], list[str]]:
     """
-    Robust parallel TTS with pre-flight checks, WAV validation, and retry with backoff.
+    Robust parallel TTS with indefinite retry, auto-restart, and progress tracking.
     
     Features:
-    - Pre-flight queue status check
+    - Pre-flight queue status check + warmup
     - Validates existing WAV files (size + RIFF header)
-    - HTTP 200, non-empty body, WAV header validation for each response
-    - Tracks successes/failures by segment name
-    - Retries failed segments with exponential backoff
-    - Only proceeds when all segments confirmed
+    - Submits up to max_workers concurrent requests (2 per GPU queue depth)
+    - Retries INDEFINITELY with escalating backoff (60/60/120/120/300s...)
+    - Auto-restarts TTS server after 3 consecutive failures of the same segment
+    - Progress reporting every 30s
+    - Per-segment retry tracking
+    - Runaway detection (2x expected duration)
     
     Args:
         segments: list of (name, text) tuples
         output_dir: where to save WAV files
         voice: voice profile to use
-        max_workers: max concurrent requests
+        max_workers: max concurrent requests (default 6 = 2 per GPU)
         skip_existing: skip segments with existing valid WAVs
         abort_on_queue: abort if queue already has items
-        retry_backoff: base seconds to wait between retries (exponential)
     
     Returns:
         (successful_paths, failed_names)
     """
+    import threading
+    
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # PRE-FLIGHT: Check queue status
@@ -762,9 +792,9 @@ def text_to_speech_parallel_robust(
                 "Clear queue or pass abort_on_queue=False to continue."
             )
     
-    # PRE-FLIGHT: Find existing valid WAVs (with proper header validation)
+    # PRE-FLIGHT: Find existing valid WAVs
     existing_names = []
-    to_generate = []
+    to_generate: list[tuple[str, str]] = []
     
     for name, text in segments:
         wav_path = output_dir / f"{name}.wav"
@@ -776,63 +806,182 @@ def text_to_speech_parallel_robust(
     if existing_names:
         print(f"Skipping {len(existing_names)} existing valid WAVs: {existing_names[:5]}{'...' if len(existing_names) > 5 else ''}")
     
+    total_segments = len(segments)
+    total_to_generate = len(to_generate)
+    
     if not to_generate:
         print("All segments already exist with valid WAV files!")
         return [output_dir / f"{name}.wav" for name, _ in segments], []
     
-    print(f"Generating {len(to_generate)} segments...")
+    print(f"Generating {total_to_generate} segments with {max_workers} workers...")
     
-    # Track all failure reasons for final report
-    all_failures: dict[str, str] = {}
+    # Per-segment retry tracking
+    retry_counts: dict[str, int] = {}  # name -> consecutive failure count
+    all_failures: dict[str, str] = {}  # name -> last error message
     
-    # SUBMIT & RETRY: Fire all requests with exponential backoff
-    for attempt in range(MAX_RETRY_ATTEMPTS):
-        if attempt > 0:
-            backoff_time = RETRY_BACKOFF_SCHEDULE[min(attempt - 1, len(RETRY_BACKOFF_SCHEDULE) - 1)]
-            print(f"Retry round {attempt + 1}/{MAX_RETRY_ATTEMPTS} after {backoff_time}s backoff...")
-            time.sleep(backoff_time)
+    # Progress state (thread-safe)
+    lock = threading.Lock()
+    completed_count = 0
+    active_count = 0
+    last_progress_time = time.time()
+    
+    def _worker(name: str, text: str) -> tuple[str, bool, str]:
+        """Worker: render one segment with patient retry."""
+        nonlocal completed_count, active_count, last_progress_time
+        
+        with lock:
+            active_count += 1
+        
+        try:
+            prepared_text = prepare_text_for_tts(text)
+            word_count = len(text.split())
+            expected_duration = estimate_expected_duration(text)
+            start_time = time.time()
             
-            # Re-warmup if many failures (server might be restarting/cold)
-            if len(to_generate) > MASS_FAILURE_THRESHOLD:
-                print(f"  {len(to_generate)} failures — re-warming TTS server...")
-                warmup_tts_server(max_wait=120)
+            try:
+                response = requests.post(
+                    TTS_URL,
+                    headers={"Content-Type": "application/json"},
+                    json={"text": prepared_text, "voice": voice, "timeout": 0},
+                    timeout=(10, 3600),  # 10s connect, 1hr read
+                )
+            except requests.exceptions.Timeout:
+                return (name, False, "request timeout (1hr)")
+            except requests.exceptions.ConnectionError as e:
+                return (name, False, f"connection error: {e}")
+            except Exception as e:
+                return (name, False, f"unexpected error: {e}")
+            
+            job_id = response.headers.get("X-Job-Id")
+            
+            if response.status_code != 200:
+                return (name, False, f"HTTP {response.status_code} (job={job_id}): {response.text[:200]}")
+            
+            is_valid, error = validate_wav_bytes(response.content)
+            if not is_valid:
+                return (name, False, error)
+            
+            # Runaway detection
+            actual_duration = get_wav_duration_from_bytes(response.content)
+            if actual_duration > 0 and expected_duration > 0:
+                ratio = actual_duration / expected_duration
+                if ratio >= RUNAWAY_THRESHOLD_MULTIPLIER:
+                    return (name, False, f"runaway: {actual_duration:.1f}s vs {expected_duration:.1f}s expected ({ratio:.1f}x)")
+            
+            # Write WAV
+            wav_path = output_dir / f"{name}.wav"
+            wav_path.write_bytes(response.content)
+            
+            elapsed = time.time() - start_time
+            duration_str = f"{actual_duration:.1f}s" if actual_duration > 0 else "?"
+            print(f"  ✓ {name} — {word_count} words, {duration_str} audio, rendered in {elapsed:.0f}s")
+            
+            with lock:
+                completed_count += 1
+                last_progress_time = time.time()
+            
+            return (name, True, "")
+        finally:
+            with lock:
+                active_count -= 1
+    
+    def _progress_reporter_thread():
+        """Background thread: print progress every 30s."""
+        while not progress_stop.is_set():
+            progress_stop.wait(PROGRESS_REPORT_INTERVAL)
+            if progress_stop.is_set():
+                break
+            with lock:
+                c, a = completed_count, active_count
+            remaining = total_to_generate - c
+            queued = max(0, remaining - a)
+            print(f"  📊 Progress: {c + len(existing_names)}/{total_segments} complete, {a} active, {queued} queued")
+    
+    progress_stop = threading.Event()
+    progress_thread = threading.Thread(target=_progress_reporter_thread, daemon=True)
+    progress_thread.start()
+    
+    # Main retry loop — runs until all segments complete
+    pending = list(to_generate)  # segments still needing generation
+    
+    round_num = 0
+    while pending:
+        round_num += 1
         
-        # Generate missing segments
-        wav_files, failures = text_to_speech_parallel(to_generate, output_dir, voice, max_workers)
+        if round_num > 1:
+            # Backoff before retry round
+            backoff_idx = min(round_num - 2, len(RETRY_BACKOFF_SCHEDULE) - 1)
+            backoff_time = RETRY_BACKOFF_SCHEDULE[backoff_idx]
+            print(f"\n⏳ Retry round {round_num} — waiting {backoff_time}s before retrying {len(pending)} segments...")
+            time.sleep(backoff_time)
         
-        # Update failure tracking
-        all_failures.update(failures)
+        round_failures: list[tuple[str, str, str]] = []  # (name, text, error)
         
-        # Check what succeeded
-        succeeded = {p.stem for p in wav_files}
-        failed_names = [name for name, _ in to_generate if name not in succeeded]
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(_worker, name, text): (name, text)
+                for name, text in pending
+            }
+            
+            for future in as_completed(futures):
+                name, text = futures[future]
+                try:
+                    seg_name, success, error = future.result()
+                except Exception as e:
+                    seg_name, success, error = name, False, f"executor error: {e}"
+                
+                if not success:
+                    round_failures.append((seg_name, text, error))
+                    all_failures[seg_name] = error
+                    
+                    # Track consecutive failures
+                    retry_counts[seg_name] = retry_counts.get(seg_name, 0) + 1
+                    print(f"  ✗ {seg_name} FAILED (attempt {retry_counts[seg_name]}): {error}")
+                else:
+                    # Reset consecutive failure count on success
+                    retry_counts.pop(seg_name, None)
+                    all_failures.pop(seg_name, None)
         
-        if not failed_names:
-            print(f"All {len(to_generate)} segments generated successfully!")
+        if not round_failures:
+            print(f"\n✅ All {total_to_generate} segments generated successfully!")
             break
         
-        # Check if files were created despite timeout (race condition recovery)
-        # Use proper WAV validation
-        still_missing = []
-        for name in failed_names:
+        # Check for segments needing server restart
+        needs_restart = any(
+            retry_counts.get(name, 0) >= CONSECUTIVE_FAILURES_BEFORE_RESTART
+            for name, _, _ in round_failures
+        )
+        
+        if needs_restart:
+            worst = max(round_failures, key=lambda x: retry_counts.get(x[0], 0))
+            print(f"\n🚨 Segment '{worst[0]}' has failed {retry_counts[worst[0]]} consecutive times — restarting TTS server...")
+            restart_tts_server(wait_seconds=120)
+            # Reset retry counts after restart (give fresh start)
+            for name, _, _ in round_failures:
+                retry_counts[name] = 0
+        
+        # Check for recovered files (race condition)
+        still_pending = []
+        for name, text, error in round_failures:
             wav_path = output_dir / f"{name}.wav"
             if validate_existing_wav(wav_path):
-                print(f"  Recovered {name} (valid WAV created after initial check)")
-                del all_failures[name]  # Remove from failures
+                print(f"  Recovered {name} (valid WAV found on disk)")
+                with lock:
+                    completed_count += 1
+                all_failures.pop(name, None)
             else:
-                still_missing.append(name)
+                still_pending.append((name, text))
         
-        if not still_missing:
-            failed_names = []
-            print("All segments recovered!")
-            break
+        pending = still_pending
         
-        # Update to_generate for retry
-        to_generate = [(n, t) for n, t in to_generate if n in still_missing]
-        failed_names = still_missing
-        print(f"  {len(still_missing)} segments still need retry: {still_missing}")
+        if pending:
+            print(f"  {len(pending)} segments still need retry: {[n for n, _ in pending]}")
     
-    # Build complete list including pre-existing files (with validation)
+    # Stop progress reporter
+    progress_stop.set()
+    progress_thread.join(timeout=5)
+    
+    # Build complete ordered list
     all_paths = []
     final_failed = []
     
@@ -845,7 +994,7 @@ def text_to_speech_parallel_robust(
     
     # Summary
     print(f"\nTTS Summary:")
-    print(f"  Total segments: {len(segments)}")
+    print(f"  Total segments: {total_segments}")
     print(f"  Successful: {len(all_paths)}")
     print(f"  Failed: {len(final_failed)}")
     
