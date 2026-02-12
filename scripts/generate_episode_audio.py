@@ -542,14 +542,51 @@ def stitch_wavs_variable(
                     sil = silence_wavs[silence_durations[i]]
                     f.write(f"file '{sil.absolute()}'\n")
         
+        # Stitch segments
+        stitched_raw = output_path.with_suffix('.raw.wav')
         result = subprocess.run(
-            ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_file), "-c", "copy", str(output_path)],
+            ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_file), "-c", "copy", str(stitched_raw)],
             capture_output=True, text=True,
         )
         
         if result.returncode != 0:
             print(f"ffmpeg stitch error: {result.stderr}")
             return False
+
+        # Two-pass loudness normalization to -14 LUFS (Spotify target)
+        print("  Normalizing loudness (two-pass, target -14 LUFS)...")
+        measure = subprocess.run(
+            ["ffmpeg", "-i", str(stitched_raw), "-af",
+             "loudnorm=I=-13:TP=-1:LRA=11:print_format=json", "-f", "null", "-"],
+            capture_output=True, text=True,
+        )
+        import json as _json, re as _re
+        json_match = _re.search(r'\{[^}]+\}', measure.stderr, _re.DOTALL)
+        if json_match:
+            stats = _json.loads(json_match.group())
+            mi = stats["input_i"]
+            mtp = stats["input_tp"]
+            mlra = stats["input_lra"]
+            mth = stats["input_thresh"]
+            result2 = subprocess.run(
+                ["ffmpeg", "-y", "-i", str(stitched_raw), "-af",
+                 f"loudnorm=I=-13:TP=-1:LRA=11:measured_I={mi}:measured_TP={mtp}:measured_LRA={mlra}:measured_thresh={mth}:linear=true",
+                 "-ar", "44100", "-b:a", "192k", str(output_path)],
+                capture_output=True, text=True,
+            )
+            if result2.returncode != 0:
+                print(f"  Loudnorm error: {result2.stderr}")
+                # Fallback: just copy raw
+                import shutil
+                shutil.move(str(stitched_raw), str(output_path))
+            else:
+                stitched_raw.unlink(missing_ok=True)
+                print(f"  Loudness normalized to ~-14 LUFS")
+        else:
+            print("  Warning: Could not parse loudnorm stats, using raw stitch")
+            import shutil
+            shutil.move(str(stitched_raw), str(output_path))
+        
         return True
     finally:
         for f in tmp_files:
