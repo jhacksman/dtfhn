@@ -238,6 +238,8 @@ def parse_args():
     parser.add_argument("--list-jobs", action="store_true", help="List all tracked jobs with status and exit")
     parser.add_argument("--stuck-threshold", type=int, default=STUCK_JOB_THRESHOLD,
                         help=f"Seconds with no progress before warning (default {STUCK_JOB_THRESHOLD})")
+    parser.add_argument("--num-takes", type=int, default=1,
+                        help="Number of TTS takes per segment; keep longest (default 1)")
     return parser.parse_args()
 
 
@@ -833,6 +835,7 @@ def main():
                 skip_existing=True,
                 abort_on_queue=False,  # Already checked manually above
                 max_workers=6,  # 3 GPUs × 2 queue depth
+                num_takes=args.num_takes,
             )
             tts_time = (datetime.now() - start_time).total_seconds()
             print(f"TTS completed in {tts_time:.1f}s ({len(wav_files)} files)")

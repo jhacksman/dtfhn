@@ -754,6 +754,7 @@ def text_to_speech_parallel_robust(
     max_workers: int = 6,
     skip_existing: bool = True,
     abort_on_queue: bool = True,
+    num_takes: int = 1,
 ) -> tuple[list[Path], list[str]]:
     """
     Robust parallel TTS with indefinite retry, auto-restart, and progress tracking.
@@ -825,56 +826,91 @@ def text_to_speech_parallel_robust(
     active_count = 0
     last_progress_time = time.time()
     
+    def _render_one_take(name: str, text: str, take_id: int = 0) -> tuple[bytes | None, float, str]:
+        """Render a single TTS take. Returns (wav_bytes, duration, error)."""
+        prepared_text = prepare_text_for_tts(text)
+        expected_duration = estimate_expected_duration(text)
+        
+        try:
+            response = requests.post(
+                TTS_URL,
+                headers={"Content-Type": "application/json"},
+                json={"text": prepared_text, "voice": voice, "timeout": 0},
+                timeout=(10, 3600),
+            )
+        except requests.exceptions.Timeout:
+            return (None, 0.0, "request timeout (1hr)")
+        except requests.exceptions.ConnectionError as e:
+            return (None, 0.0, f"connection error: {e}")
+        except Exception as e:
+            return (None, 0.0, f"unexpected error: {e}")
+        
+        job_id = response.headers.get("X-Job-Id")
+        
+        if response.status_code != 200:
+            return (None, 0.0, f"HTTP {response.status_code} (job={job_id}): {response.text[:200]}")
+        
+        is_valid, error = validate_wav_bytes(response.content)
+        if not is_valid:
+            return (None, 0.0, error)
+        
+        actual_duration = get_wav_duration_from_bytes(response.content)
+        if actual_duration > 0 and expected_duration > 0:
+            ratio = actual_duration / expected_duration
+            if ratio >= RUNAWAY_THRESHOLD_MULTIPLIER:
+                return (None, 0.0, f"runaway: {actual_duration:.1f}s vs {expected_duration:.1f}s expected ({ratio:.1f}x)")
+        
+        return (response.content, actual_duration, "")
+
     def _worker(name: str, text: str) -> tuple[str, bool, str]:
-        """Worker: render one segment with patient retry."""
+        """Worker: render one segment with patient retry. Supports multi-take (longest wins)."""
         nonlocal completed_count, active_count, last_progress_time
         
         with lock:
             active_count += 1
         
         try:
-            prepared_text = prepare_text_for_tts(text)
             word_count = len(text.split())
-            expected_duration = estimate_expected_duration(text)
             start_time = time.time()
             
-            try:
-                response = requests.post(
-                    TTS_URL,
-                    headers={"Content-Type": "application/json"},
-                    json={"text": prepared_text, "voice": voice, "timeout": 0},
-                    timeout=(10, 3600),  # 10s connect, 1hr read
-                )
-            except requests.exceptions.Timeout:
-                return (name, False, "request timeout (1hr)")
-            except requests.exceptions.ConnectionError as e:
-                return (name, False, f"connection error: {e}")
-            except Exception as e:
-                return (name, False, f"unexpected error: {e}")
-            
-            job_id = response.headers.get("X-Job-Id")
-            
-            if response.status_code != 200:
-                return (name, False, f"HTTP {response.status_code} (job={job_id}): {response.text[:200]}")
-            
-            is_valid, error = validate_wav_bytes(response.content)
-            if not is_valid:
-                return (name, False, error)
-            
-            # Runaway detection
-            actual_duration = get_wav_duration_from_bytes(response.content)
-            if actual_duration > 0 and expected_duration > 0:
-                ratio = actual_duration / expected_duration
-                if ratio >= RUNAWAY_THRESHOLD_MULTIPLIER:
-                    return (name, False, f"runaway: {actual_duration:.1f}s vs {expected_duration:.1f}s expected ({ratio:.1f}x)")
-            
-            # Write WAV
-            wav_path = output_dir / f"{name}.wav"
-            wav_path.write_bytes(response.content)
-            
-            elapsed = time.time() - start_time
-            duration_str = f"{actual_duration:.1f}s" if actual_duration > 0 else "?"
-            print(f"  ✓ {name} — {word_count} words, {duration_str} audio, rendered in {elapsed:.0f}s")
+            if num_takes <= 1:
+                # Single take (original behavior)
+                wav_bytes, duration, error = _render_one_take(name, text)
+                if wav_bytes is None:
+                    return (name, False, error)
+                
+                wav_path = output_dir / f"{name}.wav"
+                wav_path.write_bytes(wav_bytes)
+                
+                elapsed = time.time() - start_time
+                duration_str = f"{duration:.1f}s" if duration > 0 else "?"
+                print(f"  ✓ {name} — {word_count} words, {duration_str} audio, rendered in {elapsed:.0f}s")
+            else:
+                # Multi-take: render num_takes, keep longest
+                takes = []  # (wav_bytes, duration, take_id)
+                errors = []
+                
+                for take_id in range(num_takes):
+                    wav_bytes, duration, error = _render_one_take(name, text, take_id)
+                    if wav_bytes is not None:
+                        takes.append((wav_bytes, duration, take_id))
+                    else:
+                        errors.append(f"take{take_id}: {error}")
+                
+                if not takes:
+                    return (name, False, f"all {num_takes} takes failed: {'; '.join(errors)}")
+                
+                # Pick longest take
+                best = max(takes, key=lambda t: t[1])
+                wav_path = output_dir / f"{name}.wav"
+                wav_path.write_bytes(best[0])
+                
+                elapsed = time.time() - start_time
+                durations = [f"{t[1]:.1f}s" for t in sorted(takes, key=lambda t: t[2])]
+                print(f"  ✓ {name} — {word_count} words, {len(takes)}/{num_takes} takes, "
+                      f"best={best[1]:.1f}s [{', '.join(durations)}], rendered in {elapsed:.0f}s")
+                if errors:
+                    print(f"    ⚠️ {len(errors)} failed takes: {'; '.join(errors)}")
             
             with lock:
                 completed_count += 1
