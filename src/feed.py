@@ -296,11 +296,11 @@ def generate_feed(output_path: Optional[str] = None) -> str:
     xml_str = '<?xml version="1.0" encoding="UTF-8"?>\n'
     xml_str += ET.tostring(rss, encoding="unicode", xml_declaration=False)
 
-    if output_path:
-        path = Path(output_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(xml_str, encoding="utf-8")
-        print(f"  Feed written to {output_path} ({len(episodes)} episodes)")
+        # Always write to disk — default to data/feed.xml
+    path = Path(output_path) if output_path else MANIFEST_PATH.parent / "feed.xml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(xml_str, encoding="utf-8")
+    print(f"  Feed written to {path} ({len(episodes)} episodes)")
 
     return xml_str
 
