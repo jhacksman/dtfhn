@@ -466,8 +466,8 @@ def main():
 
     print("\n✓ Done!")
     if args.episode_date:
-        print(f"  Episode: https://podcast.pdxh.org/dtfhn/episodes/DTFHN-{args.episode_date}.mp3")
-    print(f"  Feed:    https://podcast.pdxh.org/dtfhn/feed.xml")
+        print(f"  Episode: https://pod.c457.org/dtfhn/episodes/DTFHN-{args.episode_date}.mp3")
+    print(f"  Feed:    https://pod.c457.org/dtfhn/feed.xml")
 
 
 if __name__ == "__main__":

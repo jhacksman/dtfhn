@@ -21,7 +21,7 @@ PODCAST_METADATA = {
     "explicit": True,
     "category_primary": "Technology",
     "category_secondary": "News > Daily News",
-    "website": "https://podcast.pdxh.org",
+    "website": "https://pod.c457.org",
     "description_short": (
         "Your Daily Tech Feed for coverage of the top 10 stories on Hacker News."
         " Informed commentary and analysis. We are DTF:HN."

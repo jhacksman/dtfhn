@@ -2,7 +2,7 @@
 
 An AI-generated daily podcast covering the top 10 stories from Hacker News. Fully automated: fetches stories, generates scripts, synthesizes speech, and publishes.
 
-**Live feed:** [podcast.pdxh.org/dtfhn/feed.xml](https://podcast.pdxh.org/dtfhn/feed.xml)
+**Live feed:** [pod.c457.org/dtfhn/feed.xml](https://pod.c457.org/dtfhn/feed.xml)
 
 ## What It Does
 
@@ -204,7 +204,7 @@ MIT — See [LICENSE](LICENSE)
 
 ## Links
 
-- **RSS Feed:** https://podcast.pdxh.org/dtfhn/feed.xml
+- **RSS Feed:** https://pod.c457.org/dtfhn/feed.xml
 - **Spotify:** https://open.spotify.com/show/0JnwyMvqXZQ32B9KbS37Qq
 - **Apple Podcasts:** Search "Daily Tech Feed Hacker News"
 - **Source:** https://github.com/jhacksman/dtfhn

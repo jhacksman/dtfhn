@@ -22,7 +22,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MANIFEST_PATH = PROJECT_ROOT / "data" / "feed_episodes.json"
 
 # R2 / public URL configuration
-R2_BASE_URL = "https://podcast.pdxh.org/dtfhn"
+R2_BASE_URL = "https://pod.c457.org/dtfhn"
 EPISODES_URL = f"{R2_BASE_URL}/episodes"
 FEED_URL = f"{R2_BASE_URL}/feed.xml"
 ARTWORK_URL = f"{R2_BASE_URL}/artwork.jpg"

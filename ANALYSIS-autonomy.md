@@ -76,7 +76,7 @@ Step 4: Cloudflare Pages rebuild
 - ✅ Feed XML: Regenerated and uploaded
 - ✅ Deploy hook: Cloudflare Pages rebuild triggered
 - ✅ Lock file: Acquired and released cleanly
-- ✅ Podcast live and playable at `https://podcast.pdxh.org/dtfhn/feed.xml`
+- ✅ Podcast live and playable at `https://pod.c457.org/dtfhn/feed.xml`
 
 **This is the first fully autonomous episode.** The entire pipeline ran from cron to completion with zero human intervention.
 
@@ -202,7 +202,7 @@ Could also add SSH-based wake-up: `ssh quato 'cd /path/to/tts && ./start.sh'`
 
 **Current state:** Pipeline assumes success if no exceptions. No post-upload verification.
 **Needed:** After upload, verify:
-1. `curl -sI https://podcast.pdxh.org/dtfhn/episodes/DTFHN-{date}.mp3` returns 200
+1. `curl -sI https://pod.c457.org/dtfhn/episodes/DTFHN-{date}.mp3` returns 200
 2. Feed XML contains the new episode guid
 3. File size matches local copy
 
@@ -235,7 +235,7 @@ Add Step 5 to `run_episode.sh`:
 ```bash
 # Step 5: Deliver to subscribers
 echo "[5/5] Delivering episode..." | tee -a "$LOG"
-EPISODE_URL="https://podcast.pdxh.org/dtfhn/episodes/DTFHN-${EPISODE_DATE}.mp3"
+EPISODE_URL="https://pod.c457.org/dtfhn/episodes/DTFHN-${EPISODE_DATE}.mp3"
 # Option A: Signal (no size limits)
 openclaw message send --target signal:+19713359243 \
     --message "🎙️ New DTFHN episode: ${EPISODE_DATE}\n${EPISODE_URL}" || true
@@ -261,7 +261,7 @@ done
 ### Priority 4: Post-upload verification (LATER — 30 min)
 After R2 upload, verify the episode is accessible:
 ```bash
-HTTP_CODE=$(curl -so /dev/null -w '%{http_code}' "https://podcast.pdxh.org/dtfhn/episodes/DTFHN-${EPISODE_DATE}.mp3")
+HTTP_CODE=$(curl -so /dev/null -w '%{http_code}' "https://pod.c457.org/dtfhn/episodes/DTFHN-${EPISODE_DATE}.mp3")
 if [ "$HTTP_CODE" != "200" ]; then
     notify "FAILURE" "Episode uploaded but not accessible (HTTP $HTTP_CODE)"
 fi

@@ -1,6 +1,6 @@
 # Daily Tech Feed: Hacker News — Platform Links
 
-RSS Feed: https://podcast.pdxh.org/dtfhn/feed.xml
+RSS Feed: https://pod.c457.org/dtfhn/feed.xml
 
 ## ✅ Live
 

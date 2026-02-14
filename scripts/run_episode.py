@@ -277,7 +277,7 @@ def phase_upload(episode_date: str, episode_dir: Path, dry_run: bool = False) ->
     # Sub-step: Verify CDN
     if not dry_run and os.environ.get("CF_R2_ACCESS_KEY_ID"):
         import requests
-        ep_url = f"https://podcast.pdxh.org/dtfhn/episodes/DTFHN-{episode_date}.mp3"
+        ep_url = f"https://pod.c457.org/dtfhn/episodes/DTFHN-{episode_date}.mp3"
         try:
             r = requests.head(ep_url, timeout=10)
             log(f"CDN verify: HTTP {r.status_code}")
@@ -327,8 +327,8 @@ def phase_upload(episode_date: str, episode_dir: Path, dry_run: bool = False) ->
                     d = get_audio_duration(final_mp3)
                     duration = f"{d / 60:.0f} min"
 
-                ep_url = f"https://podcast.pdxh.org/dtfhn/episodes/DTFHN-{episode_date}.mp3"
-                feed_url = "https://podcast.pdxh.org/dtfhn/feed.xml"
+                ep_url = f"https://pod.c457.org/dtfhn/episodes/DTFHN-{episode_date}.mp3"
+                feed_url = "https://pod.c457.org/dtfhn/feed.xml"
                 msg = f"🎙️ New DTFHN Episode: {episode_date}\n\n📊 {story_count} stories · {duration}\n🎧 {ep_url}\n📡 {feed_url}"
 
                 subprocess.run(
