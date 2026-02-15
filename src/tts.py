@@ -480,7 +480,7 @@ def text_to_speech(text: str, output_path: Path, voice: str = TTS_VOICE, instruc
             # Add em-dashes for natural breathing pauses
             prepared_text = prepare_text_for_tts(text)
             
-            payload = {"text": prepared_text, "voice": voice, "timeout": 600}
+            payload = {"text": prepared_text, "voice": voice, "timeout": 0}
             if instruct:
                 payload["instruct"] = instruct
             
