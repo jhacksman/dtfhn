@@ -1,0 +1,33 @@
+{
+  "voice": {
+    "tts_voice": "dylan",
+    "tts_instruct": "Sharp, irreverent, rapid-fire with sudden pauses. Sarcastic, biting, confrontational. Builds from conversational to explosive declarations.",
+    "rvc_enabled": true,
+    "rvc_url": "http://192.168.0.134:7850/convert",
+    "rvc_model": "bob"
+  },
+  "pause": {
+    "marker": "[pause]",
+    "min_seconds": 0.5,
+    "max_seconds": 1.0,
+    "increments": [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+  },
+  "music": {
+    "theme_path": "assets/dtfhn_theme.mp3",
+    "intro_volume": 0.15,
+    "intro_fade_out_seconds": 2,
+    "outro_volume_under_voice": 0.15,
+    "outro_ramp_to_full_seconds": 2,
+    "outro_play_full_theme": true
+  },
+  "audio": {
+    "loudnorm_i": -13,
+    "loudnorm_tp": -1,
+    "loudnorm_lra": 11,
+    "sample_rate": 44100,
+    "channels": 1,
+    "bitrate": "192k",
+    "telegram_bitrate": "64k",
+    "telegram_max_mb": 16
+  }
+}

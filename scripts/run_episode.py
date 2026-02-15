@@ -359,10 +359,22 @@ def phase_upload(episode_date: str, episode_dir: Path, dry_run: bool = False) ->
     return True
 
 
+def load_pipeline_voice_config() -> dict:
+    """Load voice config from pipeline_config.json."""
+    config_path = PROJECT_ROOT / "pipeline_config.json"
+    if config_path.exists():
+        with open(config_path) as f:
+            return json.load(f).get("voice", {})
+    return {}
+
+
 def run_pipeline(episode_date: str, dry_run: bool = False):
     """Run the full resilient pipeline."""
+    voice_cfg = load_pipeline_voice_config()
+    tts_voice = voice_cfg.get("tts_voice", "forbin")
+    rvc_model = voice_cfg.get("rvc_model", "")
     log(f"=== DTFHN Pipeline: {episode_date} ===")
-    log(f"Character: {os.environ.get('CHARACTER', 'jack')}")
+    log(f"Voice: {tts_voice}" + (f" + RVC {rvc_model}" if voice_cfg.get("rvc_enabled") else ""))
 
     episode_dir = get_episode_dir(episode_date)
 
@@ -397,13 +409,9 @@ def run_pipeline(episode_date: str, dry_run: bool = False):
             if not check_tts_server():
                 raise RuntimeError("TTS server unreachable after 3 retries")
 
-            # Voice check
-            character = os.environ.get("CHARACTER", "jack")
-            try:
-                from src.tts import get_tts_voice
-                voice = get_tts_voice()
-            except Exception:
-                voice = character
+            # Voice check — use pipeline_config.json as source of truth
+            voice_cfg = load_pipeline_voice_config()
+            voice = voice_cfg.get("tts_voice", "forbin")
             if not check_tts_voice(voice):
                 raise RuntimeError(f"Voice '{voice}' not available")
 
@@ -443,7 +451,8 @@ def main():
                         help="Show what would happen without doing it")
     args = parser.parse_args()
 
-    # Set default character
+    # Pipeline config is now the source of truth for voice (not CHARACTER env var)
+    # Keep CHARACTER for backward compat with generator.py character system
     os.environ.setdefault("CHARACTER", "jack")
 
     run_pipeline(args.episode_date, dry_run=args.dry_run)

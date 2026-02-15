@@ -457,7 +457,7 @@ RUNAWAY_THRESHOLD_MULTIPLIER = 2.0  # If duration >= 2x expected, it's a runaway
 MAX_RUNAWAY_RETRIES = 2  # Max times to retry a runaway segment
 
 
-def text_to_speech(text: str, output_path: Path, voice: str = TTS_VOICE) -> tuple[bool, str]:
+def text_to_speech(text: str, output_path: Path, voice: str = TTS_VOICE, instruct: str = None) -> tuple[bool, str]:
     """
     Generate WAV from text via quato TTS with runaway detection.
     
@@ -468,6 +468,7 @@ def text_to_speech(text: str, output_path: Path, voice: str = TTS_VOICE) -> tupl
         text: Text to convert to speech
         output_path: Where to save the WAV file
         voice: Voice profile to use (default from CHARACTER env)
+        instruct: Optional TTS instruct text for style control (CustomVoice only)
     
     Returns:
         (success, error_message) - error_message is empty on success
@@ -479,10 +480,14 @@ def text_to_speech(text: str, output_path: Path, voice: str = TTS_VOICE) -> tupl
             # Add em-dashes for natural breathing pauses
             prepared_text = prepare_text_for_tts(text)
             
+            payload = {"text": prepared_text, "voice": voice, "timeout": 600}
+            if instruct:
+                payload["instruct"] = instruct
+            
             response = requests.post(
                 TTS_URL,
                 headers={"Content-Type": "application/json"},
-                json={"text": prepared_text, "voice": voice, "timeout": 600},
+                json=payload,
                 timeout=(10, TTS_TIMEOUT),  # 10s connect, TTS_TIMEOUT read — detect dead server fast
             )
             
@@ -533,18 +538,22 @@ def text_to_speech(text: str, output_path: Path, voice: str = TTS_VOICE) -> tupl
     return (False, "max retries exhausted")
 
 
-def _tts_worker(args: tuple[str, str, Path, str]) -> tuple[str, Path | None, str]:
+def _tts_worker(args: tuple) -> tuple[str, Path | None, str]:
     """
     Worker function for parallel TTS.
     
     Args:
-        args: (name, text, output_path, voice)
+        args: (name, text, output_path, voice) or (name, text, output_path, voice, instruct)
     
     Returns:
         (name, output_path, error) - output_path is None and error is set on failure
     """
-    name, text, output_path, voice = args
-    success, error = text_to_speech(text, output_path, voice)
+    if len(args) == 5:
+        name, text, output_path, voice, instruct = args
+    else:
+        name, text, output_path, voice = args
+        instruct = None
+    success, error = text_to_speech(text, output_path, voice, instruct=instruct)
     return (name, output_path if success else None, error)
 
 
@@ -553,6 +562,7 @@ def text_to_speech_parallel(
     output_dir: Path,
     voice: str = TTS_VOICE,
     max_workers: int = 1,
+    instruct: str = None,
 ) -> tuple[list[Path], dict[str, str]]:
     """
     Generate all WAVs in parallel.
@@ -567,6 +577,7 @@ def text_to_speech_parallel(
         output_dir: where to save WAV files
         voice: voice profile to use
         max_workers: max concurrent requests (default 25 for full episodes)
+        instruct: optional TTS instruct text for style control
     
     Returns:
         (wav_files, failures)
@@ -577,7 +588,7 @@ def text_to_speech_parallel(
     
     # Build work items
     work_items = [
-        (name, text, output_dir / f"{name}.wav", voice)
+        (name, text, output_dir / f"{name}.wav", voice, instruct)
         for name, text in segments
     ]
     
@@ -755,6 +766,7 @@ def text_to_speech_parallel_robust(
     skip_existing: bool = True,
     abort_on_queue: bool = True,
     num_takes: int = 1,
+    instruct: str = None,
 ) -> tuple[list[Path], list[str]]:
     """
     Robust parallel TTS with indefinite retry, auto-restart, and progress tracking.
@@ -831,11 +843,15 @@ def text_to_speech_parallel_robust(
         prepared_text = prepare_text_for_tts(text)
         expected_duration = estimate_expected_duration(text)
         
+        payload = {"text": prepared_text, "voice": voice, "timeout": 0}
+        if instruct:
+            payload["instruct"] = instruct
+        
         try:
             response = requests.post(
                 TTS_URL,
                 headers={"Content-Type": "application/json"},
-                json={"text": prepared_text, "voice": voice, "timeout": 0},
+                json=payload,
                 timeout=(10, 3600),
             )
         except requests.exceptions.Timeout:

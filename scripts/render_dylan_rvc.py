@@ -1,6 +1,12 @@
+# DEPRECATED: Voice pipeline integrated into generate_episode_audio.py as of 2026-02-15
+# This file is kept for reference only. Use generate_episode_audio.py with pipeline_config.json.
 #!/usr/bin/env python3
 """Render DTFHN episode with dylan voice + sharp instruct, then RVC to bob.
-Single takes. Handles full pipeline: TTS → RVC → merge → loudnorm → upload."""
+Single takes. Handles full pipeline: TTS → RVC → merge → loudnorm → upload.
+
+DEPRECATED: All functionality has been moved to generate_episode_audio.py
+which reads pipeline_config.json for voice, RVC, pause, and music settings.
+"""
 
 import json
 import os

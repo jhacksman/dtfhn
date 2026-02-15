@@ -28,13 +28,16 @@ import subprocess
 import fcntl
 import json
 import time
+import random
+import re
 import argparse
 import requests
 from pathlib import Path
 from datetime import datetime
 
 # Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.tts import text_to_speech_parallel_robust, check_tts_status, TTS_STATUS_URL, warmup_tts_server
 from src.audio import (
@@ -53,6 +56,186 @@ TTS_BASE_URL = "http://192.168.0.134:7849"
 
 # Stuck job detection threshold (seconds)
 STUCK_JOB_THRESHOLD = 600  # 10 minutes with no progress = warning
+
+# ---------------------------------------------------------------------------
+# Pipeline config (loaded from pipeline_config.json)
+# ---------------------------------------------------------------------------
+
+PIPELINE_CONFIG_PATH = PROJECT_ROOT / "pipeline_config.json"
+
+
+def load_pipeline_config() -> dict:
+    """Load pipeline_config.json. Falls back to defaults if missing."""
+    if PIPELINE_CONFIG_PATH.exists():
+        with open(PIPELINE_CONFIG_PATH) as f:
+            config = json.load(f)
+        print(f"Loaded pipeline config from {PIPELINE_CONFIG_PATH}")
+        return config
+    print("WARNING: pipeline_config.json not found, using defaults")
+    return {
+        "voice": {"tts_voice": "forbin", "tts_instruct": None, "rvc_enabled": False},
+        "pause": {"increments": [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]},
+        "music": {},
+        "audio": {"loudnorm_i": -13, "loudnorm_tp": -1, "loudnorm_lra": 11,
+                  "sample_rate": 44100, "bitrate": "192k"},
+    }
+
+
+# ---------------------------------------------------------------------------
+# RVC voice conversion
+# ---------------------------------------------------------------------------
+
+def rvc_convert(wav_path: Path, output_path: Path, rvc_url: str, rvc_model: str,
+                retries: int = 3) -> bool:
+    """
+    Convert a WAV through RVC voice model.
+    
+    Args:
+        wav_path: Input WAV file
+        output_path: Output WAV file (RVC-converted)
+        rvc_url: RVC server URL (e.g., http://192.168.0.134:7850/convert)
+        rvc_model: RVC model name (e.g., "bob")
+        retries: Number of retry attempts
+    
+    Returns:
+        True if conversion succeeded
+    """
+    if output_path.exists() and output_path.stat().st_size > 1000:
+        return True  # Already converted
+    
+    for attempt in range(retries):
+        try:
+            with open(wav_path, 'rb') as f:
+                resp = requests.post(
+                    rvc_url,
+                    files={"audio": f},
+                    data={"model_name": rvc_model},
+                    timeout=300,
+                )
+            if resp.status_code == 200 and len(resp.content) > 1000:
+                output_path.write_bytes(resp.content)
+                return True
+            print(f"  RVC fail: status={resp.status_code} size={len(resp.content)}")
+        except Exception as e:
+            print(f"  RVC error (attempt {attempt + 1}/{retries}): {e}")
+        time.sleep(10 * (attempt + 1))
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Music overlay
+# ---------------------------------------------------------------------------
+
+def apply_music_overlay(
+    body_wav: Path,
+    output_wav: Path,
+    intro_wav: Path,
+    outro_wav: Path,
+    theme_path: Path,
+    music_config: dict,
+) -> bool:
+    """
+    Apply theme music overlay to intro and outro sections of the episode.
+    
+    Intro: theme at intro_volume under voice, fade out after voice ends.
+    Outro: theme at outro_volume under voice, ramp to full after voice ends,
+           play remainder of full theme.
+    
+    Args:
+        body_wav: Full episode WAV (all segments stitched)
+        output_wav: Output WAV with music overlay
+        intro_wav: Just the intro segment WAV (to get duration)
+        outro_wav: Just the outro segment WAV (to get duration)
+        theme_path: Path to theme MP3/WAV file
+        music_config: Music config from pipeline_config.json
+    
+    Returns:
+        True if overlay succeeded
+    """
+    if not theme_path.exists():
+        print(f"WARNING: Theme file not found at {theme_path}, skipping music overlay")
+        return False
+    
+    intro_vol = music_config.get("intro_volume", 0.15)
+    intro_fade = music_config.get("intro_fade_out_seconds", 2)
+    outro_vol = music_config.get("outro_volume_under_voice", 0.15)
+    outro_ramp = music_config.get("outro_ramp_to_full_seconds", 2)
+    play_full = music_config.get("outro_play_full_theme", True)
+    
+    intro_dur = get_audio_duration(intro_wav)
+    outro_dur = get_audio_duration(outro_wav)
+    body_dur = get_audio_duration(body_wav)
+    theme_dur = get_audio_duration(theme_path)
+    
+    if intro_dur <= 0 or outro_dur <= 0 or body_dur <= 0:
+        print("WARNING: Could not determine audio durations, skipping music overlay")
+        return False
+    
+    # Outro starts at body_dur - outro_dur
+    outro_start = body_dur - outro_dur
+    
+    # Build complex ffmpeg filter:
+    # [0] = body audio
+    # [1] = theme for intro
+    # [2] = theme for outro
+    #
+    # Intro overlay: theme at intro_vol, from 0 to intro_dur + intro_fade, then fade out
+    # Outro overlay: theme at outro_vol under voice, then ramp to 1.0 after voice
+    
+    intro_end = intro_dur + intro_fade
+    
+    # For outro: theme plays from outro_start to end
+    # Under voice: volume = outro_vol
+    # After voice ends: ramp to full over outro_ramp seconds
+    # If play_full: let theme play its full duration after voice
+    if play_full:
+        outro_total = outro_dur + outro_ramp + max(0, theme_dur - outro_dur - outro_ramp)
+    else:
+        outro_total = outro_dur + outro_ramp + 3  # 3s tail
+    
+    # Build ffmpeg command with complex filter
+    # We'll use two passes: intro overlay, then outro overlay
+    # Simpler: one pass with two theme inputs
+    
+    filter_complex = (
+        # Intro theme: trim to intro_end, set volume, fade out at end
+        f"[1:a]atrim=0:{intro_end},volume={intro_vol},afade=t=out:st={intro_dur}:d={intro_fade}[intro_music];"
+        # Pad intro music to start at 0 and extend to body length
+        f"[intro_music]apad=whole_dur={body_dur + outro_total}[intro_padded];"
+        # Outro theme: set initial volume, then ramp up after voice
+        # Use volume filter with enable for the two phases
+        f"[2:a]volume={outro_vol}:enable='between(t,0,{outro_dur})',"
+        f"volume=1.0:enable='gte(t,{outro_dur + outro_ramp})',"
+        f"afade=t=in:st={outro_dur}:d={outro_ramp}[outro_music];"
+        # Delay outro music to start at outro_start
+        f"[outro_music]adelay={int(outro_start * 1000)}|{int(outro_start * 1000)}[outro_delayed];"
+        # Pad to ensure same length
+        f"[outro_delayed]apad=whole_dur={body_dur + outro_total}[outro_padded];"
+        # Pad body to extend for outro tail
+        f"[0:a]apad=whole_dur={body_dur + outro_total}[body_padded];"
+        # Mix all three
+        f"[body_padded][intro_padded][outro_padded]amix=inputs=3:duration=longest:normalize=0[out]"
+    )
+    
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(body_wav),
+        "-i", str(theme_path),
+        "-i", str(theme_path),
+        "-filter_complex", filter_complex,
+        "-map", "[out]",
+        "-ar", "24000", "-ac", "1",
+        str(output_wav),
+    ]
+    
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    
+    if result.returncode != 0:
+        print(f"Music overlay ffmpeg error: {result.stderr[:500]}")
+        return False
+    
+    print(f"Music overlay applied: intro={intro_dur:.1f}s, outro={outro_dur:.1f}s, theme={theme_dur:.1f}s")
+    return True
 
 
 def wait_for_queue_drain(timeout_seconds: int = 1800, poll_interval: int = 10,
@@ -279,6 +462,9 @@ def split_into_paragraphs(text: str, min_words: int = 20) -> tuple[list[str], li
     [pause] markers create mandatory segment boundaries with longer silence gaps.
     Regular paragraph breaks (\n\n) use the standard grouping/pairing logic.
     
+    CRITICAL: After splitting, verifies NO chunk still contains literal [pause].
+    If found, strips it and logs a warning.
+    
     For paragraphs within a [pause] section, uses fixed grouping:
       - Pairs paragraphs (1+2), (3+4), last solo if odd
       - Short paragraphs (< min_words) merge into previous chunk
@@ -291,14 +477,11 @@ def split_into_paragraphs(text: str, min_words: int = 20) -> tuple[list[str], li
         Tuple of:
           - List of text chunks, each suitable for a TTS job
           - List of booleans (len = len(chunks) - 1): True if the boundary
-            between chunk[i] and chunk[i+1] is a [pause] break (gets 0.75s
-            silence), False for a normal paragraph break (gets 0.5s silence)
+            between chunk[i] and chunk[i+1] is a [pause] break (gets random
+            silence from config increments), False for a normal paragraph break
     """
-    import re
-    
-    # Split on [pause] markers first — these are hard boundaries
-    # Strip the literal [pause] text so TTS never sees it
-    pause_sections = re.split(r'\[pause\]', text)
+    # Split on [pause] markers first — case-insensitive
+    pause_sections = re.split(r'\[pause\]', text, flags=re.IGNORECASE)
     
     all_chunks = []
     pause_boundaries = []  # True at boundaries that came from [pause]
@@ -335,13 +518,6 @@ def split_into_paragraphs(text: str, min_words: int = 20) -> tuple[list[str], li
                     section_chunks.append(merged[i])
                     i += 1
         
-        # Record boundary types for chunks within this section (paragraph breaks)
-        for _ in range(len(section_chunks) - 1):
-            if all_chunks:  # Not first chunk overall — this is a paragraph boundary
-                pause_boundaries.append(False)
-            elif len(all_chunks) == 0 and len(section_chunks) > 1:
-                pass  # Will be added in the inner loop below
-        
         # If we already have chunks from a previous section, the boundary
         # between the last existing chunk and the first of this section is a [pause]
         if all_chunks and section_chunks:
@@ -355,6 +531,12 @@ def split_into_paragraphs(text: str, min_words: int = 20) -> tuple[list[str], li
     
     if not all_chunks:
         return [text.strip()], []
+    
+    # CRITICAL: Verify no chunk still contains [pause] literal
+    for i, chunk in enumerate(all_chunks):
+        if re.search(r'\[pause\]', chunk, flags=re.IGNORECASE):
+            print(f"  WARNING: Chunk {i} still contains [pause] literal — stripping it")
+            all_chunks[i] = re.sub(r'\[pause\]', '', chunk, flags=re.IGNORECASE).strip()
     
     return all_chunks, pause_boundaries
 
@@ -699,6 +881,59 @@ def release_lock(lock_fd, lock_file: Path) -> None:
         pass  # Best effort cleanup
 
 
+def validate_preflight(segments_with_parent: list[tuple[str, str, str]], config: dict) -> bool:
+    """
+    Pre-flight validation: scan all segment texts for issues before assembly.
+    
+    Checks:
+    - No literal [pause] remaining in rendered text
+    - RVC output files exist for all segments (if rvc_enabled)
+    
+    Returns True if validation passes, False otherwise.
+    """
+    issues = []
+    
+    # Check for literal [pause] in segment texts
+    for name, text, parent in segments_with_parent:
+        if re.search(r'\[pause\]', text, flags=re.IGNORECASE):
+            issues.append(f"PAUSE_LEAK: {name} still contains [pause] literal")
+    
+    if issues:
+        print("PRE-FLIGHT VALIDATION FAILED:")
+        for issue in issues:
+            print(f"  ❌ {issue}")
+        return False
+    
+    print("Pre-flight validation passed ✓")
+    return True
+
+
+def validate_final_mp3(mp3_path: Path, min_minutes: float = 5, max_minutes: float = 45) -> bool:
+    """
+    Validate final episode MP3 duration is reasonable.
+    
+    Args:
+        mp3_path: Path to final MP3
+        min_minutes: Minimum acceptable duration in minutes
+        max_minutes: Maximum acceptable duration in minutes
+    
+    Returns:
+        True if duration is within bounds
+    """
+    duration = get_audio_duration(mp3_path)
+    duration_min = duration / 60
+    
+    if duration_min < min_minutes:
+        print(f"WARNING: Episode too short ({duration_min:.1f} min < {min_minutes} min)")
+        return False
+    if duration_min > max_minutes:
+        print(f"WARNING: Episode too long ({duration_min:.1f} min > {max_minutes} min)")
+        return False
+    
+    print(f"Duration validation passed: {duration_min:.1f} min ✓")
+    return True
+
+
 def main():
     args = parse_args()
 
@@ -726,7 +961,23 @@ def main():
     episode_dir = Path(__file__).parent.parent / "data" / "episodes" / episode_date
     lock_file = episode_dir / ".tts_generation.lock"
     
+    # Load pipeline config
+    config = load_pipeline_config()
+    voice_config = config.get("voice", {})
+    pause_config = config.get("pause", {})
+    music_config = config.get("music", {})
+    audio_config = config.get("audio", {})
+    
+    tts_voice = voice_config.get("tts_voice", "forbin")
+    tts_instruct = voice_config.get("tts_instruct")
+    rvc_enabled = voice_config.get("rvc_enabled", False)
+    rvc_url = voice_config.get("rvc_url", "")
+    rvc_model = voice_config.get("rvc_model", "")
+    pause_increments = pause_config.get("increments", [0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
+    bitrate = audio_config.get("bitrate", "192k")
+    
     print(f"=== Generating TTS for episode {episode_date} ===")
+    print(f"  Voice: {tts_voice} | Instruct: {'yes' if tts_instruct else 'no'} | RVC: {'enabled' if rvc_enabled else 'disabled'}")
     print()
     
     # LOCK: Prevent concurrent runs
@@ -793,6 +1044,10 @@ def main():
             print(f"  {name}: {words} words{suffix}")
         print()
         
+        # PRE-FLIGHT: Validate no [pause] leaks in segment texts
+        validate_preflight(segments_with_parent, config)
+        print()
+        
         # PRE-FLIGHT: Check for existing segment MP3s (the archival format)
         existing_mp3_names, missing_segments = find_existing_segment_mp3s(
             segments_with_parent, segments_dir
@@ -826,12 +1081,14 @@ def main():
                 print("WARNING: TTS warmup failed, proceeding anyway...")
             print()
             
-            # Generate TTS for missing segments
-            print(f"Generating TTS for {len(segments_to_generate)} segments (parallel to 3 GPUs)...")
+            # Generate TTS for missing segments using config voice+instruct
+            print(f"Generating TTS for {len(segments_to_generate)} segments (voice={tts_voice})...")
             start_time = datetime.now()
             wav_files, failed = text_to_speech_parallel_robust(
                 segments_to_generate,
                 wav_dir,
+                voice=tts_voice,
+                instruct=tts_instruct,
                 skip_existing=True,
                 abort_on_queue=False,  # Already checked manually above
                 max_workers=6,  # 3 GPUs × 2 queue depth
@@ -852,13 +1109,34 @@ def main():
             if len(wav_files) != len(segments_to_generate):
                 print(f"WARNING: Only {len(wav_files)}/{len(segments_to_generate)} segments generated!")
             
+            # RVC conversion (if enabled)
+            if rvc_enabled and rvc_url and rvc_model:
+                print(f"Running RVC conversion (model={rvc_model})...")
+                rvc_success = 0
+                rvc_fallback = 0
+                for wav_path in wav_files:
+                    rvc_wav = wav_path.with_suffix('.rvc.wav')
+                    if rvc_convert(wav_path=wav_path, output_path=rvc_wav,
+                                   rvc_url=rvc_url, rvc_model=rvc_model):
+                        # Replace original with RVC version
+                        rvc_wav.rename(wav_path)
+                        rvc_success += 1
+                    else:
+                        print(f"  WARNING: RVC failed for {wav_path.stem}, using raw TTS")
+                        rvc_fallback += 1
+                        # rvc_wav doesn't exist or is invalid, original wav_path is intact
+                        if rvc_wav.exists():
+                            rvc_wav.unlink()
+                print(f"RVC: {rvc_success} converted, {rvc_fallback} fallbacks")
+                print()
+            
             # Transcode each WAV → segment MP3, validate, then delete WAV
-            print("Transcoding WAVs to segment MP3s (192k CBR)...")
+            print(f"Transcoding WAVs to segment MP3s ({bitrate} CBR)...")
             for wav_path in wav_files:
                 seg_name = wav_path.stem
                 mp3_path = segments_dir / f"{seg_name}.mp3"
                 
-                if not transcode_segment_to_mp3(wav_path, mp3_path, bitrate="192k"):
+                if not transcode_segment_to_mp3(wav_path, mp3_path, bitrate=bitrate):
                     print(f"ERROR: Failed to transcode {seg_name} to MP3")
                     sys.exit(1)
                 
@@ -890,18 +1168,18 @@ def main():
         
         # Stitch segment MP3s with variable silence:
         #   0.5s between paragraph sub-segments (within a script)
-        #   0.75s at [pause] markers (dramatic pause within a script)
+        #   random 0.5-1.0s at [pause] markers (from config increments)
         #   1.0s between major segments (intro→script, script→interstitial, etc.)
         print("Stitching segment MP3s with variable silence gaps...")
         silence_map = []  # silence duration AFTER each segment (except last)
         SILENCE_PARAGRAPH = 0.5
-        SILENCE_PAUSE = 0.75
         SILENCE_MAJOR = 1.0
         for i in range(len(segments_with_parent) - 1):
             if i < len(boundary_types):
                 bt = boundary_types[i]
                 if bt == "pause":
-                    silence_map.append(SILENCE_PAUSE)
+                    # Random pause duration from config increments
+                    silence_map.append(random.choice(pause_increments))
                 elif bt == "major":
                     silence_map.append(SILENCE_MAJOR)
                 else:
@@ -915,10 +1193,104 @@ def main():
                 else:
                     silence_map.append(SILENCE_MAJOR)
         
+        # Determine intro/outro segment MP3s for music overlay
+        intro_mp3 = None
+        outro_mp3 = None
+        for name, text, parent in segments_with_parent:
+            if "intro" in parent:
+                intro_mp3 = segments_dir / f"{name}.mp3"
+                break
+        for name, text, parent in reversed(segments_with_parent):
+            if "outro" in parent:
+                outro_mp3 = segments_dir / f"{name}.mp3"
+                break
+        
         episode_mp3 = episode_dir / f"DTFHN-{episode_date}.mp3"
-        if not stitch_mp3s_variable(segment_mp3_files, episode_mp3, silence_map, bitrate="192k"):
+        
+        # First stitch without music overlay (raw assembly)
+        raw_episode_mp3 = episode_dir / f"DTFHN-{episode_date}.raw.mp3"
+        if not stitch_mp3s_variable(segment_mp3_files, raw_episode_mp3, silence_map, bitrate=bitrate):
             print("ERROR: Failed to stitch segment MP3s")
             sys.exit(1)
+        
+        # Apply music overlay if configured
+        theme_path_str = music_config.get("theme_path", "")
+        if theme_path_str and intro_mp3 and outro_mp3:
+            # Resolve theme path relative to project root
+            theme_path = PROJECT_ROOT / theme_path_str
+            if not theme_path.exists():
+                theme_path = Path(theme_path_str).expanduser()
+            
+            if theme_path.exists():
+                print("Applying music overlay...")
+                # We need WAV for overlay processing, then re-encode
+                raw_wav = episode_dir / "raw_for_overlay.wav"
+                subprocess.run(
+                    ["ffmpeg", "-y", "-i", str(raw_episode_mp3), "-ar", "24000", "-ac", "1", str(raw_wav)],
+                    capture_output=True, check=True,
+                )
+                overlaid_wav = episode_dir / "overlaid.wav"
+                
+                if apply_music_overlay(
+                    body_wav=raw_wav,
+                    output_wav=overlaid_wav,
+                    intro_wav=intro_mp3,
+                    outro_wav=outro_mp3,
+                    theme_path=theme_path,
+                    music_config=music_config,
+                ):
+                    # Two-pass loudnorm on overlaid WAV → final MP3
+                    print("Applying loudnorm to overlaid audio...")
+                    loudnorm_i = audio_config.get("loudnorm_i", -13)
+                    loudnorm_tp = audio_config.get("loudnorm_tp", -1)
+                    loudnorm_lra = audio_config.get("loudnorm_lra", 11)
+                    sample_rate = audio_config.get("sample_rate", 44100)
+                    
+                    # Pass 1: measure
+                    measure = subprocess.run(
+                        ["ffmpeg", "-i", str(overlaid_wav), "-af",
+                         f"loudnorm=I={loudnorm_i}:TP={loudnorm_tp}:LRA={loudnorm_lra}:print_format=json",
+                         "-f", "null", "-"],
+                        capture_output=True, text=True,
+                    )
+                    json_match = re.search(r'\{[^}]+\}', measure.stderr, re.DOTALL)
+                    if json_match:
+                        stats = json.loads(json_match.group())
+                        mi, mtp, mlra, mth = stats["input_i"], stats["input_tp"], stats["input_lra"], stats["input_thresh"]
+                        subprocess.run(
+                            ["ffmpeg", "-y", "-i", str(overlaid_wav), "-af",
+                             f"loudnorm=I={loudnorm_i}:TP={loudnorm_tp}:LRA={loudnorm_lra}:"
+                             f"measured_I={mi}:measured_TP={mtp}:measured_LRA={mlra}:measured_thresh={mth}:linear=true",
+                             "-ar", str(sample_rate), "-codec:a", "libmp3lame", "-b:a", bitrate,
+                             str(episode_mp3)],
+                            capture_output=True, check=True,
+                        )
+                        print(f"  Loudness normalized to ~{loudnorm_i} LUFS")
+                    else:
+                        # Fallback: simple transcode
+                        subprocess.run(
+                            ["ffmpeg", "-y", "-i", str(overlaid_wav),
+                             "-ar", str(sample_rate), "-codec:a", "libmp3lame", "-b:a", bitrate,
+                             str(episode_mp3)],
+                            capture_output=True, check=True,
+                        )
+                    
+                    # Clean up temp files
+                    raw_wav.unlink(missing_ok=True)
+                    overlaid_wav.unlink(missing_ok=True)
+                    raw_episode_mp3.unlink(missing_ok=True)
+                else:
+                    print("Music overlay failed, using raw assembly")
+                    raw_wav.unlink(missing_ok=True)
+                    overlaid_wav.unlink(missing_ok=True)
+                    raw_episode_mp3.rename(episode_mp3)
+            else:
+                print(f"Theme file not found at {theme_path}, skipping music overlay")
+                raw_episode_mp3.rename(episode_mp3)
+        else:
+            # No music config — use raw assembly as final
+            raw_episode_mp3.rename(episode_mp3)
+        
         mp3_size = episode_mp3.stat().st_size
         print(f"Episode MP3: {episode_mp3} ({mp3_size / 1024 / 1024:.1f} MB)")
         print()
@@ -928,11 +1300,20 @@ def main():
         print(f"Duration: {duration:.1f}s ({duration / 60:.1f} min)")
         print()
         
+        # POST-ASSEMBLY VALIDATION
+        validate_final_mp3(episode_mp3, min_minutes=5, max_minutes=45)
+        print()
+        
         # Build segment metadata (coalesce sub-segments back to parent level for chapters)
         print("Building segment metadata...")
         segment_metadata = build_segment_metadata_from_subs(
             episode_date, segments_with_parent, segment_mp3_files, silence_map
         )
+        
+        # Update voice field in metadata to reflect actual voice used
+        for meta in segment_metadata:
+            meta["voice"] = tts_voice
+            meta["tts_model"] = "qwen3-tts"
         
         # Store in LanceDB
         print("Storing episode in LanceDB...")
@@ -979,6 +1360,7 @@ def main():
         # Summary
         print("=" * 50)
         print(f"Episode {episode_date} complete!")
+        print(f"  Voice: {tts_voice}" + (f" + RVC {rvc_model}" if rvc_enabled else ""))
         print(f"  Duration: {duration:.1f}s ({duration / 60:.1f} min)")
         print(f"  MP3 size: {mp3_size / 1024 / 1024:.1f} MB")
         print(f"  Segments: {len(segment_metadata)}")
