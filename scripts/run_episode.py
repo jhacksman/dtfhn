@@ -133,7 +133,21 @@ def phase_fetch(episode_date: str, episode_dir: Path, dry_run: bool = False) -> 
     from src.storage import store_stories_batch, get_existing_hn_ids
     from src.pipeline import convert_article_to_story
 
-    hn_stories = fetch_stories(limit=10, verbose=True)
+    # Collect HN IDs from recent episodes to avoid repeats
+    recent_ids = set()
+    for recent_dir in sorted(EPISODES_DIR.glob("20*"))[-3:]:
+        sfile = recent_dir / "stories.json"
+        if sfile.exists() and recent_dir.name != episode_date:
+            try:
+                for s in json.loads(sfile.read_text()):
+                    if s.get("id"):
+                        recent_ids.add(str(s["id"]))
+            except Exception:
+                pass
+    if recent_ids:
+        log(f"Excluding {len(recent_ids)} story IDs from recent episodes")
+
+    hn_stories = fetch_stories(limit=10, verbose=True, exclude_ids=recent_ids)
     if not hn_stories:
         raise RuntimeError("No stories fetched from HN!")
 

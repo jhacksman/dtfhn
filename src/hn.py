@@ -148,19 +148,21 @@ def fetch_comments(comment_ids: list[int], max_comments: int = 10) -> list[Comme
     return comments
 
 
-def fetch_stories(limit: int = 10, verbose: bool = True) -> list[Story]:
+def fetch_stories(limit: int = 10, verbose: bool = True, exclude_ids: set[str] | None = None) -> list[Story]:
     """
     Fetch top HN stories with articles and comments.
 
     Args:
         limit: Number of stories to fetch
         verbose: Print progress
+        exclude_ids: Set of HN story IDs to skip (e.g. from previous episodes)
 
     Returns:
         List of Story objects
     """
-    # Fetch extra IDs to account for non-story items (jobs, polls)
-    fetch_limit = limit + 10
+    exclude_ids = exclude_ids or set()
+    # Fetch extra IDs to account for non-story items (jobs, polls) and exclusions
+    fetch_limit = limit + 10 + len(exclude_ids)
     if verbose:
         print(f"Fetching top {fetch_limit} story IDs (need {limit} stories)...")
 
@@ -181,6 +183,11 @@ def fetch_stories(limit: int = 10, verbose: bool = True) -> list[Story]:
         if not item or item.get("type") != "story":
             if verbose:
                 print("  Skipping non-story item")
+            continue
+
+        if str(story_id) in exclude_ids:
+            if verbose:
+                print(f"  Skipping (already covered in recent episode): {item.get('title', '')[:60]}")
             continue
 
         title = item.get("title", "")
