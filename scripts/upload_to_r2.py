@@ -211,12 +211,26 @@ def generate_content_encoded(episode_date: str) -> str | None:
     else:
         prose = f"Your Daily Tech Feed covering the top {story_count} stories on Hacker News for {human_date}."
 
+    # Load chapters for seek links (graceful if missing)
+    chapters_map = {}  # title -> startTime in seconds
+    chapters_path = episode_dir / "chapters.json"
+    if chapters_path.exists():
+        try:
+            chapters_data = json.loads(chapters_path.read_text(encoding="utf-8"))
+            for ch in chapters_data.get("chapters", []):
+                ch_title = ch.get("title", "")
+                if ch_title and "startTime" in ch:
+                    chapters_map[ch_title] = ch["startTime"]
+        except (json.JSONDecodeError, KeyError):
+            pass
+
     # Build HTML story list
     import html as html_mod
     lines = [f"<p>{html_mod.escape(prose)}</p>", "<p><strong>Stories covered:</strong></p>", "<ol>"]
 
     for story in stories:
-        title = html_mod.escape(story.get("title", "Untitled"))
+        title_raw = story.get("title", "Untitled")
+        title = html_mod.escape(title_raw)
         url = story.get("url", "")
         hn_id = story.get("id", "")
 
@@ -227,6 +241,12 @@ def generate_content_encoded(episode_date: str) -> str | None:
         if hn_id:
             hn_url = f"https://news.ycombinator.com/item?id={hn_id}"
             links.append(f'<a href="{hn_url}" target="_blank" rel="noopener noreferrer">HN Discussion</a>')
+        # Seek link from chapters
+        if title_raw in chapters_map:
+            secs = int(chapters_map[title_raw])
+            mins, remainder = divmod(secs, 60)
+            seek_display = f"{mins}:{remainder:02d}"
+            links.append(f'<a href="#t={secs}" class="seek-link" data-seek="{secs}">🎧 {seek_display}</a>')
         if links:
             li += f"<br/>({' | '.join(links)})"
         li += "</li>"
