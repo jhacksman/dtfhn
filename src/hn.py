@@ -161,12 +161,12 @@ def fetch_stories(limit: int = 10, verbose: bool = True, exclude_ids: set[str] |
         List of Story objects
     """
     exclude_ids = exclude_ids or set()
-    # Fetch extra IDs to account for non-story items (jobs, polls) and exclusions
-    fetch_limit = limit + 10 + len(exclude_ids)
+    # HN top stories endpoint returns up to 500 IDs — fetch all of them
+    # and iterate until we have enough originals
     if verbose:
-        print(f"Fetching top {fetch_limit} story IDs (need {limit} stories)...")
+        print(f"Fetching top story IDs (need {limit} original stories, excluding {len(exclude_ids)} previous)...")
 
-    story_ids = fetch_top_story_ids(fetch_limit)
+    story_ids = fetch_top_story_ids(500)
     if not story_ids:
         print("ERROR: No story IDs fetched!")
         return []
