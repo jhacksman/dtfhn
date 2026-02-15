@@ -1,0 +1,13 @@
+Seven hundred and twenty-eight points on this one, and every single one of them is deserved.
+
+The ArchWiki is one of those places on the internet that feels like stumbling into a cathedral someone built entirely by hand, over decades, because they thought it was important. And they were right.
+
+Here's what makes it extraordinary. Most software documentation is written by the people who designed the software, which means it describes how the thing is supposed to work. The ArchWiki is written by the people who actually used the software at two in the morning when something broke, which means it describes how the thing actually works. That difference is enormous.
+
+Arch Linux has this philosophy of staying close to upstream [pause] minimal patching, minimal customization. And that decision had this beautiful unintended consequence. Because the ArchWiki documents software as it actually ships, the guides work for nearly every Linux distribution. A Debian user searching for how to configure PulseAudio lands on the ArchWiki page and walks away with exactly what they needed. It became distribution-agnostic almost by accident. An architectural decision about minimalism produced the most useful documentation resource in all of Linux.
+
+The craft on display is staggering. Thousands of articles, meticulously cross-referenced, updated across years of kernel releases and configuration format changes. No advertising. No engagement metrics. No growth hacking. Just [pause] people writing things down correctly so other people don't have to figure it out alone.
+
+One commenter raises the Gentoo Wiki incident [pause] a reminder that community wikis can vanish. That vulnerability is real. This is infrastructure that millions depend on, maintained by volunteers, and funded by donations. Edward Snowden once pointed out that search results have become garbage for basically everything except the ArchWiki. When the commercial web optimizes for engagement and the ArchWiki optimizes for being correct [pause] you start to see which approach actually respects your time.
+
+The people maintaining this thing don't get stock options. They don't get conference keynotes. They get the quiet satisfaction of knowing that somewhere right now, someone is solving their problem because a stranger wrote a clear explanation and kept it updated for free. That's a gorgeous thing to do with your time on earth.

@@ -1,0 +1,11 @@
+Sean Goedecke's post covers two approaches to faster LLM inference, and they attack the problem from completely different angles.
+
+The first is Anthropic's strategy for low-batch inference. When you're serving a single request rather than batching hundreds together, the bottleneck shifts from compute to memory bandwidth. The model weights need to move from GPU memory to the compute units, and for a single query that transfer dominates your latency. Anthropic's approach focuses on optimizing that memory-bound regime [pause] techniques like quantization, speculative decoding, and architectural choices that reduce the amount of weight data you need to move per token.
+
+The second is OpenAI's distilled Spark model. Instead of optimizing how you run a big model, you train a smaller model to mimic the big one. Distillation takes the output distributions of a large teacher model and uses them as training signal for a compact student model. The student learns to approximate the teacher's behavior at a fraction of the parameter count. Fewer parameters means less memory, less compute, lower latency.
+
+Both approaches have trade-offs. The low-batch optimization path keeps the full model's capability but requires careful engineering at the serving layer. Distillation trades some capability for dramatic efficiency gains [pause] the student model will always be slightly worse than the teacher on the hardest tasks, but for the majority of practical queries it can be indistinguishable.
+
+The interesting thing is that these techniques compose. You could distill a model and then apply low-batch optimizations to the distilled version. The gains stack. And as Goedecke points out, the choice between them often depends on your deployment context [pause] are you running one query at a time on a local GPU, or thousands per second in a data center? Different bottlenecks call for different solutions.
+
+Clean technical writeup, well worth the read if you're working anywhere near inference infrastructure.

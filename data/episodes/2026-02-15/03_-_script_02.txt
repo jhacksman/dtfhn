@@ -1,0 +1,11 @@
+On Linux, you want a C compiler, you type a command, you get a compiler. On Windows, you type "Install Visual Studio" and you've signed up for a fifteen-gigabyte adventure where most of the endings involve staring at error codes.
+
+Jonathan Marler has been pulling at this thread, and what he found is delightful in its absurdity. Fifteen gigabytes downloaded to get a fifty-megabyte compiler. A GUI installer with hundreds of checkboxes where missing one [pause] say, "Windows 10 SDK 10.0.17763.0" or "Spectre-mitigated libs" [pause] means your build fails three hours later. And even after all that, compiling a single C file from the command line requires finding something called the Developer Command Prompt, which runs a batch script that mutates your environment variables just to locate where the compiler is hiding this week.
+
+The fix Marler built is a standalone toolchain resolver that pulls exactly the components you need [pause] the actual compiler, the actual linker, the actual SDK headers [pause] without the IDE wrapped around them. It seems obvious in retrospect, which is usually a sign that the original problem was being framed wrong. The question was never "how do we make Visual Studio easier to install." The question was "why does compiling a C program require an IDE at all?"
+
+The comments are full of people describing their own workarounds [pause] unattended install scripts, Docker containers, MinGW, various escape hatches. And the sheer number of escape hatches tells you everything about the room they're escaping from.
+
+Every open source project that lists "Install Visual Studio" as a build requirement is effectively outsourcing its contributor experience to Microsoft's installer team. Maintainers become unpaid tech support, triaging GitHub issues that have nothing to do with their code and everything to do with checkbox configurations. The friction compounds. Contributors bounce. Windows support quietly atrophies.
+
+When a toolchain is built as a monolith rather than composable parts, users don't get to choose. Marler just [pause] unbundled the thing. Sometimes the most satisfying fix is the most obvious one that nobody got around to doing.

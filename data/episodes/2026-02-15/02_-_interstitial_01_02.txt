@@ -1,0 +1,1 @@
+Speaking of documentation that should exist but doesn't [pause] story two is about what happens when a developer gets fed up with a toolchain that's been annoying everyone for twenty years.

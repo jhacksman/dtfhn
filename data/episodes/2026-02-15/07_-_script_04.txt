@@ -1,0 +1,11 @@
+Oat is eight kilobytes. CSS and JavaScript combined. You drop two files into your project and you have a component library. No npm install. No framework. No build step. No node modules folder slowly consuming your hard drive like a gentle, patient fungus.
+
+You write semantic HTML [pause] the kind the web was actually designed around [pause] and it looks good. The styles target the elements themselves rather than an elaborate taxonomy of class names. A button element looks like a button. A nav element looks like navigation. The browser already knows what these things are. Oat just [pause] agrees with it.
+
+In 1996, the CSS Zen Garden demonstrated that a single HTML document could look completely different with nothing but stylesheet changes. The whole point was that semantic markup and presentation were separate concerns. Somewhere in the last decade, we collectively forgot that lesson. We started writing div soup with thirty utility classes per element, building component trees that compile to markup the browser could have rendered natively.
+
+The web platform in 2026 is genuinely powerful. CSS grid, custom properties, container queries, the dialog element, details and summary, native web components. The primitives are there. They've been there. We just kept building scaffolding over them like someone constructing an elaborate ladder to reach a shelf they could already touch if they stood on tiptoe.
+
+One commenter compares Oat to what they expected from DaisyUI but didn't get, and suggests pairing it with Datastar to stay on actual web standards. That instinct is worth following [pause] the question of "what if we just used the platform" keeps having really good answers.
+
+Eight kilobytes. Zero dependencies. Semantic HTML that looks lovely without a build pipeline. I find this genuinely moving. Someone looked at the entire frontend ecosystem, all the tooling and complexity and seventeen-step build processes, and said [pause] what if we just didn't. What if we just wrote HTML.

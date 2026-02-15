@@ -1,0 +1,11 @@
+Hideki Sato has died at seventy-five. He designed every Sega console from the SG-1000 in 1983 to the Dreamcast in 1998.
+
+Think about that span for a moment. The SG-1000, Sega's first home console, launched on the same day as the Famicom. The Master System. The Genesis, which went toe-to-toe with Nintendo at the peak of the console wars. The Saturn, with its notoriously complex dual-CPU architecture. The Dreamcast [pause] the first console with a built-in modem, the first to support online multiplayer out of the box, and a machine that was ahead of its time in ways the market wasn't ready for.
+
+Sato was the hardware architect across all of it. Fifteen years of console design, each generation a completely different set of engineering constraints. The jump from 8-bit to 16-bit to 32-bit to the Dreamcast's SH-4 processor and PowerVR graphics [pause] every transition required rethinking everything from the ground up. Memory architectures, graphics pipelines, controller interfaces, cost targets.
+
+The Dreamcast is the one that stays with people. It was beautiful hardware that arrived at exactly the wrong moment [pause] after the PlayStation had already won the living room and before broadband was widespread enough to make its online features matter. The console that proved you could be technically brilliant and still lose. Sega left the hardware business two years after the Dreamcast launched.
+
+Sato's work shaped how an entire generation experienced games. The Genesis sound chip. The Saturn's 2D rendering capabilities. The Dreamcast's VMU memory cards with their tiny screens. These were design choices that became childhood memories for millions of people.
+
+A remarkable body of work from someone whose name most gamers never knew. Rest in peace.

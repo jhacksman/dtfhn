@@ -1,0 +1,11 @@
+The year is 1986. Binary Systems ships a game called Starflight that lets you captain a starship across an open galaxy [pause] mining planets, conducting diplomacy, engaging in combat, uncovering a slow-burning plot about ancient beings causing stars to flare. This is a sandbox game before the term existed. It influenced everything from Star Control to Mass Effect.
+
+And the entire thing was written in Forth.
+
+Forth is the kind of language that makes you reconsider what a programming language even is. The syntax is literally just spaces between words. "Two three plus dot." That's valid code. Stack machine, reverse Polish notation, no real distinction between data and code. Building in Forth is like constructing a cathedral out of bricks and mortar with no steel frame [pause] just raw material and technique.
+
+Here's what the reverse engineering uncovered, and this is where it gets beautiful. The compiled executable is over ninety percent sixteen-bit pointers. Less than five percent is actual x86 assembly. The compiled code preserves the structure of the original Forth source [pause] no optimization pass, no mangling. And two thousand of the original six thousand word names are still embedded in the binary, encrypted but recoverable. That's like finding the architect's original notes hidden inside the walls of a finished building.
+
+The Forth interpreter [pause] the interactive development environment itself [pause] is still in the executable. You can enable it. In 1986, they shipped a game with a live coding environment baked into the binary. The code wastes roughly half its CPU cycles just jumping between threaded word calls, but the elegance of the architecture makes you forgive it instantly.
+
+The entire reverse engineering effort is on GitHub. The disassembly, the analysis, the recovered source structure, and now it runs in a browser. Someone took a forty-year-old game, peeled back every layer, documented how a small team squeezed an entire galaxy out of indirect threading and a stack, and made the whole thing available to study. Genuinely wonderful work.

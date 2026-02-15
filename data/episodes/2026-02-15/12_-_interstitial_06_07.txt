@@ -1,0 +1,1 @@
+From modern inference tricks to ancient code archaeology [pause] story seven is about a forty-year-old game written in a language that barely has syntax.

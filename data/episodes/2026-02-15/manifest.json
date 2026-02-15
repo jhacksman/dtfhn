@@ -1,0 +1,61 @@
+{
+  "episode_date": "2026-02-15",
+  "generated_at": "2026-02-15T10:58:42.946941",
+  "stories": 10,
+  "scripts_words": 3154,
+  "episode_words": 3595,
+  "segments": [
+    "00_-_intro",
+    "01_-_script_01",
+    "02_-_interstitial_01_02",
+    "03_-_script_02",
+    "04_-_interstitial_02_03",
+    "05_-_script_03",
+    "06_-_interstitial_03_04",
+    "07_-_script_04",
+    "08_-_interstitial_04_05",
+    "09_-_script_05",
+    "10_-_interstitial_05_06",
+    "11_-_script_06",
+    "12_-_interstitial_06_07",
+    "13_-_script_07",
+    "14_-_interstitial_07_08",
+    "15_-_script_08",
+    "16_-_interstitial_08_09",
+    "17_-_script_09",
+    "18_-_interstitial_09_10",
+    "19_-_script_10",
+    "20_-_outro"
+  ],
+  "files": {
+    "episode": "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/episode.txt",
+    "intro": "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/00_-_intro.txt",
+    "outro": "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/20_-_outro.txt",
+    "scripts": [
+      "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/01_-_script_01.txt",
+      "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/03_-_script_02.txt",
+      "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/05_-_script_03.txt",
+      "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/07_-_script_04.txt",
+      "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/09_-_script_05.txt",
+      "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/11_-_script_06.txt",
+      "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/13_-_script_07.txt",
+      "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/15_-_script_08.txt",
+      "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/17_-_script_09.txt",
+      "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/19_-_script_10.txt"
+    ],
+    "interstitials": [
+      "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/02_-_interstitial_01_02.txt",
+      "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/04_-_interstitial_02_03.txt",
+      "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/06_-_interstitial_03_04.txt",
+      "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/08_-_interstitial_04_05.txt",
+      "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/10_-_interstitial_05_06.txt",
+      "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/12_-_interstitial_06_07.txt",
+      "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/14_-_interstitial_07_08.txt",
+      "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/16_-_interstitial_08_09.txt",
+      "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/18_-_interstitial_09_10.txt"
+    ],
+    "transcript_vtt": "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/transcript.vtt",
+    "transcript_txt": "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/transcript.txt",
+    "chapters_json": "/Volumes/JackPack/clawd/dtfhn/data/episodes/2026-02-15/chapters.json"
+  }
+}

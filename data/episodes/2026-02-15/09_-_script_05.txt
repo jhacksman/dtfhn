@@ -1,0 +1,13 @@
+Two hundred thousand Flash games and animations, preserved in a single archive. Let me explain why this matters by way of paleontology.
+
+When a species goes extinct, you don't just lose the animal. You lose every behavior, every ecological relationship it participated in. The fossil record captures bones, not birdsong. Flash is the birdsong of the early web.
+
+Flashpoint Archive has captured over two hundred thousand pieces of interactive culture that were never designed to outlast the platform they ran on. Flash games were ephemeral by nature [pause] built by teenagers in bedrooms, hosted on sites that no longer exist, played in browsers that no longer support them. One commenter found animations they made at thirteen. Another discovered their game in the archive, username misspelled, which tells you something about the painstaking manual curation involved.
+
+Flash was an entire creative ecosystem. The barrier to entry was absurdly low. A kid with a copy of Macromedia Flash and a Newgrounds account could ship a game to millions. No app store review. No monetization strategy. No analytics dashboard. Just creation for the sake of creation, distributed freely.
+
+One commenter watches their nephew navigate the modern mobile game landscape [pause] swatting away ads, refusing premium upgrades, wading through what they describe as shallow, glossy muck. The contrast is devastating. Flash games were often crude, sometimes brilliant, always free in the deepest sense. Most major mobile game genres trace their lineage directly back to Flash prototypes, which is one of those facts that makes you want to sit down for a moment.
+
+The Ruffle project re-implements Flash in WebAssembly, making this archive accessible without legacy software. Open source, community-driven, still working through the enormous surface area of ActionScript 3 compatibility. The missing NetConnection support that blocks multiplayer games shows how much complexity Flash contained beneath its reputation as a simple animation tool.
+
+These are two hundred thousand fossils, and unlike the paleontology kind [pause] these ones still sing when you press play.
