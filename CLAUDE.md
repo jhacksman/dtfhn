@@ -1,6 +1,6 @@
 # Daily Tech Feed, Hacker News Edition (dtfhn)
 
-Tech news podcast. Transforms HN articles + comments into 10-story episodes with distinctive voice and perspective. Default character: Dr. Forbin (configurable via `CHARACTER` env var; supports "forbin", "carlin", "gc").
+Tech news podcast. Transforms HN articles + comments into 10-story episodes with distinctive voice and perspective. Voice pipeline is config-driven via `pipeline_config.json`.
 
 ## Architecture
 
@@ -425,3 +425,11 @@ curl -X POST http://192.168.0.134:7849/speak \
 61. **Dynamic voice credits via `VOICE_CREDITS` map.** The outro credit line is now driven by `VOICE_CREDITS` dict in `src/generator.py`, keyed by TTS voice name (not character name). `get_voice_credit(tts_voice)` does the lookup with fallback to `"A I generated voice."`. The `outro_credit_voice` field was removed from `CHARACTER_CONFIG` — credit is derived dynamically from `tts_voice` at prompt-build time. Current voices: forbin, george_carlin, scarjo, noel, stephen_fry, philip_fry, lynch. To add a new voice credit: add an entry to `VOICE_CREDITS`. To add a new character: add to `CHARACTER_CONFIG` with the appropriate `tts_voice` key — the credit lookup happens automatically.
 
 64. **All external links in show notes/feed MUST use `target="_blank" rel="noopener noreferrer"`.** The website has a client-side script that adds this to all external links in `.prose` containers, but any raw HTML in RSS `content:encoded` must also include these attributes. Never redirect the podcast page away while audio is playing.
+
+65. **Voice: dylan+sharp instruct → RVC bob (pipeline_config.json).** As of 2026-02-15, the canonical voice pipeline is: Qwen3-TTS with `dylan` voice + instruct text ("Sharp, irreverent, rapid-fire...") → RVC conversion through `bob` model. All settings live in `pipeline_config.json` — the single source of truth. The `CHARACTER` env var is retained only for backward compat with the text generation character system (prompts, voice credits); voice *rendering* comes from pipeline_config.json.
+
+66. **Pauses: [pause] only, random 0.5-1.0s silence.** Script text uses `[pause]` markers for dramatic pauses. `split_into_paragraphs()` splits on `[pause]` case-insensitively, then verifies NO chunk still contains the literal. Each pause boundary gets a random duration chosen from `config.pause.increments` (default: [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]) via `random.choice()`. Silence WAVs are generated per-pause, not from a fixed file.
+
+67. **Music: theme overlay on intro/outro per config.** `apply_music_overlay()` in `generate_episode_audio.py` overlays `assets/dtfhn_theme.mp3` on the episode. Intro: theme at 15% under voice, fades out 2s after voice ends. Outro: theme at 15% under voice, ramps to 100% over 2s after voice ends, plays remainder of full theme. Overlay is applied BEFORE loudnorm (on raw WAVs, then loudnorm the result). Config in `pipeline_config.json` under `music`.
+
+68. **Pipeline: ONE script, no side scripts. Config-driven.** `generate_episode_audio.py` is the canonical audio pipeline. It loads `pipeline_config.json` at startup for all voice, pause, music, and audio settings. `render_dylan_rvc.py` is DEPRECATED (kept for reference). Never create side scripts for voice processing — integrate into the main pipeline.
