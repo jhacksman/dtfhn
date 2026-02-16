@@ -422,6 +422,20 @@ def run_pipeline(episode_date: str, dry_run: bool = False):
         if not dry_run:
             phase_assembly(episode_date, episode_dir, dry_run)
 
+        # Phase 4.5: Archive to shared LanceDB (non-blocking)
+        if not dry_run:
+            try:
+                from src.archive import archive_episode
+                final_mp3 = episode_dir / f"DTFHN-{episode_date}.mp3"
+                duration = get_audio_duration(final_mp3) if final_mp3.exists() else 0.0
+                archive_episode(
+                    episode_date=episode_date,
+                    episode_dir=episode_dir,
+                    duration_seconds=duration,
+                )
+            except Exception as e:
+                log(f"WARNING: Archive failed (non-blocking): {e}")
+
         # Phase 5: Upload
         phase_upload(episode_date, episode_dir, dry_run)
 
