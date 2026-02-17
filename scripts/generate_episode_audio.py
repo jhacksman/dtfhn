@@ -114,6 +114,15 @@ def rvc_convert(wav_path: Path, output_path: Path, rvc_url: str, rvc_model: str,
                 )
             if resp.status_code == 200 and len(resp.content) > 1000:
                 output_path.write_bytes(resp.content)
+                # Resample to 24kHz — RVC outputs 48kHz, TTS outputs 24kHz
+                resampled = output_path.with_suffix('.resampled.wav')
+                resample_result = subprocess.run(
+                    ["ffmpeg", "-y", "-i", str(output_path), "-ar", "24000", "-ac", "1", str(resampled)],
+                    capture_output=True,
+                )
+                if resample_result.returncode == 0 and resampled.exists():
+                    output_path.unlink()
+                    resampled.rename(output_path)
                 return True
             print(f"  RVC fail: status={resp.status_code} size={len(resp.content)}")
         except Exception as e:
