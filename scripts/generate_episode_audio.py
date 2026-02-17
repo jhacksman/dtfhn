@@ -1091,7 +1091,7 @@ def main():
                 instruct=tts_instruct,
                 skip_existing=True,
                 abort_on_queue=False,  # Already checked manually above
-                max_workers=3,  # 1 per GPU — no queue flooding
+                max_workers=2,  # 1 per GPU (TTS on GPUs 1+2, RVC on GPU 0)
                 num_takes=args.num_takes,
             )
             tts_time = (datetime.now() - start_time).total_seconds()
