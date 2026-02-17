@@ -2,7 +2,7 @@ You're listening to D T F H N for February fifteenth, two thousand and twenty-si
 
 ---
 
-Story 1. .
+Story 1. I love the work of the ArchWiki maintainers.
 
 [pause]
 
@@ -26,7 +26,7 @@ Speaking of documentation that should exist but doesn't [pause] story two is abo
 
 ---
 
-Story 2. I love the work of the ArchWiki maintainers.
+Story 2. I Fixed Windows Native Development.
 
 [pause]
 
@@ -48,7 +48,7 @@ From toolchains to surveillance cameras [pause] story three is about what Amazon
 
 ---
 
-Story 3. I Fixed Windows Native Development.
+Story 3. Amazon, Google Unwittingly Reveal the Severity of the U.S. Surveillance State.
 
 [pause]
 
@@ -68,7 +68,7 @@ From bloated surveillance systems to something beautifully small [pause] story f
 
 ---
 
-Story 4. Amazon, Google Unwittingly Reveal the Severity of the U.S. Surveillance State.
+Story 4. Oat – Ultra-lightweight, semantic, zero-dependency HTML UI component library.
 
 [pause]
 
@@ -90,7 +90,7 @@ From preserving the future of the web to preserving its past [pause] story five 
 
 ---
 
-Story 5. Oat – Ultra-lightweight, semantic, zero-dependency HTML UI component library.
+Story 5. Flashpoint Archive – Over 200k web games and animations preserved.
 
 [pause]
 
@@ -114,7 +114,7 @@ From preserving the past to accelerating the present [pause] story six has two n
 
 ---
 
-Story 6. Flashpoint Archive – Over 200k web games and animations preserved.
+Story 6. Two different tricks for fast LLM inference.
 
 [pause]
 
@@ -136,7 +136,7 @@ From modern inference tricks to ancient code archaeology [pause] story seven is 
 
 ---
 
-Story 7. Two different tricks for fast LLM inference.
+Story 7. Reversed engineered game Starflight (1986).
 
 [pause]
 
@@ -158,7 +158,7 @@ From intelligence built into games to intelligence built into robots [pause] sto
 
 ---
 
-Story 8. Reversed engineered game Starflight (1986).
+Story 8. RynnBrain.
 
 [pause]
 
@@ -178,7 +178,7 @@ From building the future of gaming hardware to remembering the person who built 
 
 ---
 
-Story 9. RynnBrain.
+Story 9. Hideki Sato, designer of all Sega's consoles, has died.
 
 [pause]
 
@@ -200,7 +200,7 @@ Our last story today goes back even further [pause] to 1846, and a man whose nam
 
 ---
 
-Story 10. Hideki Sato, designer of all Sega's consoles, has died.
+Story 10. An Enslaved Gardener Transformed the Pecan into a Cash Crop.
 
 [pause]
 

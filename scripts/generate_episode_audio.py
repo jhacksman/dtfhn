@@ -1091,7 +1091,7 @@ def main():
                 instruct=tts_instruct,
                 skip_existing=True,
                 abort_on_queue=False,  # Already checked manually above
-                max_workers=6,  # 3 GPUs × 2 queue depth
+                max_workers=3,  # 1 per GPU — no queue flooding
                 num_takes=args.num_takes,
             )
             tts_time = (datetime.now() - start_time).total_seconds()
@@ -1128,6 +1128,11 @@ def main():
                         if rvc_wav.exists():
                             rvc_wav.unlink()
                 print(f"RVC: {rvc_success} converted, {rvc_fallback} fallbacks")
+                if rvc_fallback > 0:
+                    print(f"ERROR: {rvc_fallback} segments failed RVC conversion. Cannot assemble with raw dylan voice.")
+                    print("Fix: ensure RVC server is running on a GPU with free VRAM (not GPU 2).")
+                    print("  ssh quato 'CUDA_VISIBLE_DEVICES=0 nohup /home/quato/rvc/rvc-server/venv/bin/python /home/quato/rvc/rvc-server/server.py > /tmp/rvc.log 2>&1 &'")
+                    sys.exit(1)
                 print()
             
             # Transcode each WAV → segment MP3, validate, then delete WAV
