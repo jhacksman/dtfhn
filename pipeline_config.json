@@ -20,6 +20,10 @@
     "outro_ramp_to_full_seconds": 2,
     "outro_play_full_theme": true
   },
+  "pronunciation": {
+    "graphene": "grafeen",
+    "GrapheneOS": "grafeen O S"
+  },
   "audio": {
     "loudnorm_i": -13,
     "loudnorm_tp": -1,
