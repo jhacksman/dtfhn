@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).parent.parent
 
 # Config
-CLI_TIMEOUT = 180  # 3 min per call
+CLI_TIMEOUT = 600  # 10 min per call (increased from 180s for long prompts)
 DEFAULT_WORD_TARGET = 4000
 WORDS_PER_STORY = 400  # ~400 words per story for 10 stories
 
@@ -414,33 +414,75 @@ def count_words(text: str) -> int:
 
 
 def call_claude(prompt: str, max_retries: int = 3) -> str:
-    """Call Claude via CLI with stdin=DEVNULL to prevent hanging.
+    """Call Claude via OpenClaw gateway, Anthropic API, or CLI.
+
+    Priority:
+    1. OpenClaw gateway /v1/chat/completions (uses subscription auth)
+    2. Anthropic API (ANTHROPIC_API_KEY env var)
+    3. Claude CLI fallback
 
     Retries up to *max_retries* times on transient failures with exponential
-    backoff (2^attempt seconds).  Catches ``RuntimeError`` (non-zero exit) and
-    ``subprocess.TimeoutExpired``.
+    backoff (2^attempt seconds).
     """
+    import json as _json
+    import urllib.request
+    import urllib.error
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    # OpenClaw gateway config
+    gateway_port = os.environ.get("OPENCLAW_GATEWAY_PORT", "18789")
+    gateway_token = os.environ.get("OPENCLAW_GATEWAY_PASSWORD") or os.environ.get("DTFHN_GATEWAY_TOKEN", "ctrlhctrlh")
+    gateway_url = f"http://localhost:{gateway_port}/v1/chat/completions"
+
+    # Determine method: gateway > api > cli
+    method = "gateway"
+    if os.environ.get("DTFHN_NO_GATEWAY"):
+        method = "api" if api_key else "cli"
+
     last_exc: Exception | None = None
 
     for attempt in range(max_retries):
         try:
-            result = subprocess.run(
-                ["claude", "-p", prompt],
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                text=True,
-                timeout=CLI_TIMEOUT,
-            )
+            if method == "gateway":
+                headers = {
+                    "Authorization": f"Bearer {gateway_token}",
+                    "Content-Type": "application/json",
+                }
+                body = _json.dumps({
+                    "model": "anthropic/claude-sonnet-4-6",
+                    "max_tokens": 4096,
+                    "messages": [{"role": "user", "content": prompt}],
+                }).encode()
+                req = urllib.request.Request(gateway_url, data=body, headers=headers, method="POST")
+                with urllib.request.urlopen(req, timeout=600) as resp:
+                    data = _json.loads(resp.read().decode())
+                    return data["choices"][0]["message"]["content"].strip()
 
-            if result.returncode != 0:
-                raise RuntimeError(f"Claude CLI failed: {result.stderr or result.stdout}")
+            elif method == "api":
+                import anthropic
+                client = anthropic.Anthropic(api_key=api_key)
+                message = client.messages.create(
+                    model="claude-sonnet-4-20250514",
+                    max_tokens=4096,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                return message.content[0].text.strip()
+            else:
+                result = subprocess.run(
+                    ["claude", "-p", prompt],
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                    timeout=CLI_TIMEOUT,
+                )
+                if result.returncode != 0:
+                    raise RuntimeError(f"Claude CLI failed: {result.stderr or result.stdout}")
+                return result.stdout.strip()
 
-            return result.stdout.strip()
-
-        except (RuntimeError, subprocess.TimeoutExpired) as exc:
+        except Exception as exc:
             last_exc = exc
             if attempt < max_retries - 1:
-                backoff = 2 ** (attempt + 1)  # 2, 4, 8 …
+                backoff = 2 ** (attempt + 1)
                 logger.warning(
                     "call_claude attempt %d/%d failed (%s). Retrying in %ds…",
                     attempt + 1, max_retries, exc, backoff,
@@ -452,7 +494,6 @@ def call_claude(prompt: str, max_retries: int = 3) -> str:
                     max_retries, exc,
                 )
 
-    # Should not reach here, but satisfy type checker
     raise last_exc  # type: ignore[misc]
 
 

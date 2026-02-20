@@ -193,8 +193,8 @@ def merge_wavs_with_silence(
 POLL_INTERVAL_SECONDS = 5  # How often to poll /status
 PROGRESS_TIMEOUT_SECONDS = 600  # 10 min stall before considering restart
 MIN_WAV_SIZE_BYTES = 1000  # Minimum valid WAV file size
-RETRY_BACKOFF_SCHEDULE = [60, 60, 120, 120, 300]  # seconds per retry (repeat last forever)
-CONSECUTIVE_FAILURES_BEFORE_RESTART = 3  # restart TTS server after this many consecutive failures of same segment
+RETRY_BACKOFF_SCHEDULE = [5, 10, 15, 30, 60]  # seconds per retry (repeat last forever)
+CONSECUTIVE_FAILURES_BEFORE_RESTART = 10  # restart TTS server after this many consecutive failures of same segment
 PROGRESS_REPORT_INTERVAL = 30  # seconds between progress reports
 
 TTS_BASE_URL = "http://192.168.0.134:7849"
@@ -218,29 +218,18 @@ def warmup_tts_server(max_wait: int = 180) -> bool:
             # Health check first
             resp = requests.get(f"{TTS_BASE_URL}/", timeout=15)
             if resp.status_code == 200:
-                # Send 3 concurrent tiny TTS requests to warm all GPUs
-                # (least-queued dispatch distributes them across GPUs)
-                from concurrent.futures import ThreadPoolExecutor as _TPE, as_completed as _ac
-                
-                def _warmup_one(i):
+                # Send 1 sequential warmup request (concurrent requests destabilize server)
+                try:
                     r = requests.post(
                         TTS_URL,
-                        json={"text": f"warmup test {i}", "voice": TTS_VOICE, "timeout": 0},
+                        json={"text": "warmup test", "voice": TTS_VOICE, "timeout": 0},
                         timeout=300,
                     )
-                    return r.status_code, len(r.content)
-                
-                try:
-                    with _TPE(max_workers=3) as pool:
-                        futures = [pool.submit(_warmup_one, i) for i in range(3)]
-                        results = [f.result() for f in _ac(futures)]
-                    
-                    successes = sum(1 for code, size in results if code == 200 and size > 100)
-                    if successes >= 1:
-                        print(f"  TTS warmup OK: {successes}/3 GPUs ready (attempt {attempt}, {time.time()-start:.0f}s)")
+                    if r.status_code == 200 and len(r.content) > 100:
+                        print(f"  TTS warmup OK (attempt {attempt}, {time.time()-start:.0f}s)")
                         return True
                     else:
-                        print(f"  TTS warmup: 0/3 succeeded, retrying...")
+                        print(f"  TTS warmup: HTTP {r.status_code}, retrying...")
                 except Exception as e:
                     print(f"  TTS warmup request failed (attempt {attempt}): {e}")
         except Exception as e:
