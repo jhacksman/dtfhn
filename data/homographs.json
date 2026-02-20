@@ -1,0 +1,106 @@
+{
+  "read": {
+    "past_tense": "red",
+    "present_tense": "reed"
+  },
+  "live": {
+    "adjective_broadcast": "lyve",
+    "verb_reside": "liv"
+  },
+  "lead": {
+    "verb_guide": "leed",
+    "noun_metal": "led"
+  },
+  "record": {
+    "verb": "reh-CORD",
+    "noun": "REH-cord"
+  },
+  "close": {
+    "verb_shut": "kloze",
+    "adjective_near": "klohs"
+  },
+  "wound": {
+    "noun_injury": "woond",
+    "past_of_wind": "wownd"
+  },
+  "present": {
+    "verb_show": "preh-ZENT",
+    "noun_gift_or_time": "PREH-zent"
+  },
+  "project": {
+    "verb_forecast": "pro-JECT",
+    "noun": "PRAH-ject"
+  },
+  "content": {
+    "adjective_satisfied": "con-TENT",
+    "noun_material": "CON-tent"
+  },
+  "minute": {
+    "noun_time": "MIN-it",
+    "adjective_tiny": "my-NOOT"
+  },
+  "bow": {
+    "verb_bend": "bau",
+    "noun_weapon_ribbon": "boh"
+  },
+  "tear": {
+    "verb_rip": "tair",
+    "noun_eye": "teer"
+  },
+  "bass": {
+    "music_low": "bayss",
+    "fish": "bass"
+  },
+  "resume": {
+    "verb_continue": "reh-ZOOM",
+    "noun_document": "REH-zoo-may"
+  },
+  "refuse": {
+    "verb_decline": "reh-FYOOZ",
+    "noun_garbage": "REF-yoos"
+  },
+  "produce": {
+    "verb_make": "pro-DOOSE",
+    "noun_food": "PRO-doose"
+  },
+  "object": {
+    "verb_protest": "ob-JECT",
+    "noun_thing": "OB-ject"
+  },
+  "permit": {
+    "verb_allow": "per-MIT",
+    "noun_license": "PER-mit"
+  },
+  "contract": {
+    "verb_shrink": "con-TRACT",
+    "noun_agreement": "CON-tract"
+  },
+  "conduct": {
+    "verb_lead": "con-DUCT",
+    "noun_behavior": "CON-duct"
+  },
+  "desert": {
+    "verb_abandon": "deh-ZERT",
+    "noun_sandy": "DEH-zert"
+  },
+  "attribute": {
+    "verb_assign": "ah-TRIB-yoot",
+    "noun_property": "AT-rih-byoot"
+  },
+  "invalid": {
+    "adjective_not_valid": "in-VAL-id",
+    "noun_sick_person": "IN-vah-lid"
+  },
+  "console": {
+    "verb_comfort": "con-SOLE",
+    "noun_terminal": "CON-sole"
+  },
+  "axes": {
+    "plural_axis": "AX-eez",
+    "plural_axe": "AX-iz"
+  },
+  "use": {
+    "verb": "yooz",
+    "noun": "yoos"
+  }
+}

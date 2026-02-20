@@ -270,11 +270,12 @@ def restart_tts_server(wait_seconds: int = 120) -> bool:
 
 def prepare_text_for_tts(text: str) -> str:
     """
-    Prepare text for TTS: pronunciation fixes and breathing pauses.
+    Prepare text for TTS: homograph disambiguation, pronunciation fixes, and breathing pauses.
     
-    Applies pronunciation substitutions for words the TTS model
-    mispronounces, then adds em-dashes at segment boundaries for
-    natural breathing room.
+    Pipeline:
+    1. Homograph disambiguation (LLM-based, context-aware)
+    2. Regex pronunciation substitutions for known mispronunciations
+    3. Em-dashes at segment boundaries for breathing room
     
     Args:
         text: Raw segment text
@@ -283,6 +284,10 @@ def prepare_text_for_tts(text: str) -> str:
         Text with pronunciation fixes and em-dashes
     """
     text = text.strip()
+    
+    # Step 1: Homograph disambiguation (LLM-based)
+    from src.homographs import disambiguate_homographs
+    text = disambiguate_homographs(text)
     
     # Pronunciation fixes — words the TTS model mispronounces
     # Add new entries as discovered. Format: (pattern, replacement)
