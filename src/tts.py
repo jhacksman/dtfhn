@@ -331,6 +331,9 @@ def prepare_text_for_tts(text: str) -> str:
         (r'\breadme\b', 'read me'),
         (r'\b[Cc]apability\b', 'cape-ability'),
         (r'\b[Cc]apabilities\b', 'cape-abilities'),
+        (r'\bSynthID\b', 'Synth Eye Dee'),
+        (r'\bsynthID\b', 'Synth Eye Dee'),
+        (r'\bSynthId\b', 'Synth Eye Dee'),
     ]
     
     for pattern, replacement in PRONUNCIATION_FIXES:
