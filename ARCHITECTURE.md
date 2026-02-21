@@ -394,7 +394,7 @@ Plus TTS costs (ElevenLabs/local)
 
 ## Next Steps
 
-1. [ ] Create CLAUDE.md with project conventions
+1. [ ] Create RULES.md with project conventions
 2. [ ] Set up sqlite-vec with schema
 3. [ ] Build HN scraper with rate limiting
 4. [ ] Test embedding + chunking on sample articles

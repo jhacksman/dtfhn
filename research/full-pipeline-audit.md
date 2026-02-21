@@ -129,7 +129,7 @@ results = table.search().where(f"episode_date = '{safe_date}'", prefilter=True)
 **Lines:** 102, 110, 118, 535, 716, 722  
 **Severity:** MEDIUM  
 
-**What breaks:** CLAUDE.md lesson #15 notes this. `table_names()` still works but emits deprecation warnings on every pipeline run. In a future LanceDB release it may be removed entirely.
+**What breaks:** RULES.md lesson #15 notes this. `table_names()` still works but emits deprecation warnings on every pipeline run. In a future LanceDB release it may be removed entirely.
 
 **Fix:** Replace all `db.table_names()` with `db.list_tables()`.
 

@@ -60,11 +60,11 @@
 - DO NOT make actual HTTP requests
 
 ## Phase 4: Documentation
-- Update CLAUDE.md lessons learned
+- Update RULES.md lessons learned
 - Commit changes with meaningful messages
 
 ## Commit Plan
 1. "feat(tts): add robust TTS constants and helper functions"
 2. "feat(tts): add text_to_speech_parallel_robust with retry logic"
 3. "feat(scripts): add lock file and pre-flight checks to audio generation"
-4. "docs: update CLAUDE.md with robust TTS lessons learned"
+4. "docs: update RULES.md with robust TTS lessons learned"

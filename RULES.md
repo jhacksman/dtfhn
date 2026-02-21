@@ -11,7 +11,7 @@ See `ARCHITECTURE.md` for the full pipeline design.
 ### File Structure
 ```
 dtfhn/
-├── CLAUDE.md           # This file
+├── RULES.md           # This file
 ├── ARCHITECTURE.md     # Pipeline design
 ├── src/                # Implementation
 ├── data/               # Vector DB, cached articles

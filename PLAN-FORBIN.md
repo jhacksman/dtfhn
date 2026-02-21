@@ -75,7 +75,7 @@ Assigned per story based on content keywords/signals:
 
 ## Phase 7: Git & Documentation
 - Commit after each phase
-- Update CLAUDE.md with lessons learned
+- Update RULES.md with lessons learned
 - Push to origin
 
 ## Key Design Decisions
