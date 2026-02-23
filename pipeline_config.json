@@ -3,7 +3,7 @@
     "tts_voice": "dylan",
     "tts_instruct": "Sharp, irreverent, rapid-fire with sudden pauses. Sarcastic, biting, confrontational. Builds from conversational to explosive declarations.",
     "rvc_enabled": true,
-    "rvc_url": "http://192.168.0.134:7850/convert",
+    "rvc_url": "http://10.9.9.51:7850/convert",
     "rvc_model": "bob"
   },
   "pause": {
