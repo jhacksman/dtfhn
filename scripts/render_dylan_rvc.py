@@ -24,8 +24,8 @@ EP_DIR = DTFHN_DIR / "data/episodes" / EP_DATE
 WAV_DIR = EP_DIR / "wav_temp"
 SEG_DIR = EP_DIR / "segments"
 
-TTS_URL = "http://192.168.0.134:7849/speak"
-RVC_URL = "http://192.168.0.134:7850/convert"
+TTS_URL = "http://10.9.10.9:7849/speak"
+RVC_URL = "http://10.9.10.9:7850/convert"
 SHARP_INSTRUCT = "Sharp, irreverent, rapid-fire with sudden pauses. Sarcastic, biting, confrontational. Builds from conversational to explosive declarations."
 
 WAV_DIR.mkdir(parents=True, exist_ok=True)

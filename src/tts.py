@@ -20,8 +20,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 # TTS server config (quato)
-TTS_URL = "http://192.168.0.134:7849/speak"
-TTS_STATUS_URL = "http://192.168.0.134:7849/status"
+TTS_URL = "http://10.9.10.9:7849/speak"
+TTS_STATUS_URL = "http://10.9.10.9:7849/status"
 TTS_TIMEOUT = 1200  # 20 min — Qwen3-TTS is slow (~1.7x realtime), longer segments need more time
 
 # Character → TTS voice mapping
@@ -197,7 +197,7 @@ RETRY_BACKOFF_SCHEDULE = [5, 10, 15, 30, 60]  # seconds per retry (repeat last f
 CONSECUTIVE_FAILURES_BEFORE_RESTART = 10  # restart TTS server after this many consecutive failures of same segment
 PROGRESS_REPORT_INTERVAL = 30  # seconds between progress reports
 
-TTS_BASE_URL = "http://192.168.0.134:7849"
+TTS_BASE_URL = "http://10.9.10.9:7849"
 
 
 def warmup_tts_server(max_wait: int = 180) -> bool:

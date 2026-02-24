@@ -52,7 +52,7 @@ from src.pipeline import parse_segment_name
 from src.generator import get_character_config
 
 # TTS server base URL
-TTS_BASE_URL = "http://192.168.0.134:7849"
+TTS_BASE_URL = "http://10.9.10.9:7849"
 
 # Stuck job detection threshold (seconds)
 STUCK_JOB_THRESHOLD = 600  # 10 minutes with no progress = warning
@@ -93,7 +93,7 @@ def rvc_convert(wav_path: Path, output_path: Path, rvc_url: str, rvc_model: str,
     Args:
         wav_path: Input WAV file
         output_path: Output WAV file (RVC-converted)
-        rvc_url: RVC server URL (e.g., http://192.168.0.134:7850/convert)
+        rvc_url: RVC server URL (e.g., http://10.9.10.9:7850/convert)
         rvc_model: RVC model name (e.g., "bob")
         retries: Number of retry attempts
     

@@ -42,7 +42,7 @@ from src.pipeline import (
 from src.audio import get_audio_duration
 
 # TTS server
-TTS_URL = "http://192.168.0.134:7849"
+TTS_URL = "http://10.9.10.9:7849"
 
 
 def log(msg: str):
