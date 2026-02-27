@@ -499,7 +499,9 @@ def estimate_expected_duration(text: str) -> float:
     """
     word_count = len(text.split())
     # 150 wpm = 2.5 words/second. Use 2.3 to be conservative.
-    return word_count / 2.3
+    # Floor at 3.0s — very short segments (1-5 words) naturally take 2-4s
+    # due to TTS warmup/padding, so ratio checks are meaningless below this.
+    return max(word_count / 2.3, 3.0)
 
 
 # Runaway detection configuration
