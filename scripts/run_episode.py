@@ -227,9 +227,15 @@ def phase_tts(episode_date: str, episode_dir: Path, dry_run: bool = False) -> bo
     # Check if final MP3 already exists (skip everything)
     final_mp3 = episode_dir / f"DTFHN-{episode_date}.mp3"
     if final_mp3.exists() and final_mp3.stat().st_size > 1_000_000:
-        log(f"SKIP tts: Final MP3 already exists ({final_mp3.stat().st_size / 1024 / 1024:.1f} MB)")
-        upsert_pipeline_state(episode_date, phase="tts", segments_rendered=21, segments_total=21)
-        return True
+        from src.audio import get_audio_duration
+        duration = get_audio_duration(final_mp3)
+        if duration >= 300:  # Must be at least 5 minutes
+            log(f"SKIP tts: Final MP3 already exists ({final_mp3.stat().st_size / 1024 / 1024:.1f} MB, {duration/60:.1f} min)")
+            upsert_pipeline_state(episode_date, phase="tts", segments_rendered=21, segments_total=21)
+            return True
+        else:
+            log(f"WARNING: Final MP3 exists but too short ({duration:.0f}s) — treating as partial, re-rendering")
+            final_mp3.unlink()
 
     if dry_run:
         log("DRY-RUN: Would run TTS generation")
