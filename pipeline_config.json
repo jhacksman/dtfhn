@@ -1,5 +1,5 @@
 {
-  "_voice_note": "rvc_enabled and rvc_model=bob are ALWAYS on. Do not change these.",
+  "_voice_note": "rvc_enabled and rvc_model=bob are ALWAYS on. Do not change these without permission from boss.",
   "voice": {
     "tts_voice": "dylan",
     "tts_instruct": "Sharp, irreverent, rapid-fire with sudden pauses. Sarcastic, biting, confrontational. Builds from conversational to explosive declarations.",
