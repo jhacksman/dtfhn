@@ -309,6 +309,8 @@ def phase_upload(episode_date: str, episode_dir: Path, dry_run: bool = False) ->
         if dry_run:
             log("DRY-RUN: Would trigger site rebuild")
         else:
+            log("Waiting 60s for R2/CDN propagation before site rebuild...")
+            time.sleep(60)
             log("Triggering site rebuild...")
             try:
                 result = subprocess.run(
